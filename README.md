@@ -138,6 +138,26 @@ orion-cli deployments rollback --target-revision 1 --expected-head-revision 3 \
 A directory the head already deploys is not applied again. A rollback commits
 an earlier revision's manifest as a new revision.
 
+### Compiling for a specific node
+
+An edition's channel protocols (Kafka, SSE, GraphQL) and connector providers
+are known to the node, not to the offline tools. Ask the target for its
+capabilities and pass them to `compile`:
+
+```bash
+orion-cli deployments capabilities -o json > caps.json
+orion-cli compile ./definitions --capabilities caps.json -o dist/deployment
+```
+
+`compile` then validates channels against that node's drivers, validates every
+connection's `bindings` against the provider's declared dependencies, and
+writes a `target.json` beside the deployment recording the edition, API
+revision, protocols and provider digests it was built for. `plan|apply -d`
+reads that record and the live target before uploading anything: an API
+revision mismatch or a channel protocol the target does not serve is refused
+before the first write. A directory compiled without `--capabilities` deploys
+exactly as before.
+
 Add `--wait-ms 10000 --wait-target observed` to apply to wait for cluster
 convergence. It prints one result containing the apply receipt and the final
 `convergence` report. The original `evaluation` describes the receiving node

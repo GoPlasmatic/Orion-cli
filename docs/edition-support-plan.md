@@ -9,7 +9,7 @@
 
 - [x] Phase 0 — rebase on the Orion v2.0 release commit
 - [x] Phase 1 — edition discovery and preflight
-- [ ] Phase 2 — authoring against an edition
+- [x] Phase 2 — authoring against an edition
 - [ ] Phase 3 — deployment manifest fidelity
 - [ ] Phase 4 — provider and connection UX
 - [ ] Phase 5 — edition channel protocols
@@ -166,14 +166,13 @@ The structural gaps are in preflight, manifest fidelity and edition-facing UX �
 
 **Work items**
 
-- Add `provider_backends[].dependencies` parsing to `src/commands/authoring/mod.rs::capabilities_boundary`.
-- Upstream coordination (Orion PR): extend `orion_authoring::definitions::Boundary` with the target providers' declared dependency aliases, and add a `check_bindings` pass to `definitions/check.rs` that validates, for every connection with `bindings`:
+- Add `provider_backends[].dependencies` parsing to `src/commands/authoring/mod.rs`.
+- Validate bindings in the CLI until `orion_authoring::Boundary` grows a dependency field (tracked as an upstream cleanup). `check_provider_bindings` is the one rule and runs after the gate in `lint`, `compile`, `clippy` and `sql check`:
   - each alias is declared by the target provider;
   - every required alias is bound, optional ones may be absent;
   - the bound connection runs on the provider the dependency declares (for example `com.orion.storage` for `artifact_store`);
-  - the dependency's allowed operations are not invented.
-  The CLI then supplies the data; it must not reimplement the rule.
-- If the upstream change cannot land in the v2.0 window: ship a CLI-side warning-only check in `compile`/`lint` against the capabilities file, and mark it for removal when the boundary grows the field.
+  - a provider that declares no dependencies cannot have `bindings`.
+  A target the capabilities file does not describe is left to the server. The check moves into `orion-authoring` once the boundary carries the declarations.
 - Record the target in the deployment directory as a CLI-owned sidecar (`target.json`):
   ```json
   {
@@ -181,15 +180,15 @@ The structural gaps are in preflight, manifest fidelity and edition-facing UX �
     "api_version": 1,
     "edition": "enterprise",
     "channel_drivers": ["cron", "http", "rest", "kafka", "sse", "graphql"],
-    "provider_digests": { "com.orion.redis": "sha256:..." },
-    "capabilities_digest": "sha256:..."
+    "provider_digests": { "com.orion.redis": "sha256:..." }
   }
   ```
-  `compile --capabilities` writes it; `DeploymentDir::read` treats it as optional (older directories still deploy). This file is CLI metadata and is never sent to the server.
-- `deployments plan|apply -d` compares `target.json` to the live target and refuses before uploading on:
-  - API revision mismatch;
-  - a channel protocol the target does not serve;
-  - a connection provider digest the target does not have (already partly checked in `deployment_dir.rs:328-350`, but without the sidecar it can only fail after uploads).
+  `compile --capabilities` writes it; `DeploymentDir::read` treats it as optional (older directories still deploy). A compile without the flag removes a stale one. This file is CLI metadata and is never sent to the server.
+- `deployments plan|apply -d` reads the live capabilities once and refuses **before uploading** on:
+  - an API revision mismatch recorded in `target.json`;
+  - a channel definition whose protocol the target does not serve;
+  - a connection provider digest the target does not have.
+  An edition downgrade is reported as a warning; the member-by-member checks decide whether the set is actually deployable. A compatible Enterprise-compiled set still applies to Community.
 - Document the two-step workflow in README and help:
   ```bash
   orion-cli deployments capabilities -o json > caps.json
@@ -197,7 +196,7 @@ The structural gaps are in preflight, manifest fidelity and edition-facing UX �
   ```
 - Tests:
   - Snippet above compiles a `kafka` channel and a `com.orion.models` connection with a `storage` binding.
-  - Applying a `target.json` from an Enterprise target to a Community target fails before any `POST /definitions`.
+  - A set that uses an edition-only protocol or provider is refused before any `POST /definitions`; a compatible Enterprise-compiled set still applies to Community.
   - A directory with no `target.json` keeps the current behaviour.
 
 **Acceptance**

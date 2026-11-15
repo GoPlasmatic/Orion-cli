@@ -85,17 +85,22 @@ pub(crate) fn run_compile(req: CompileRequest<'_>) -> Result<(), Box<dyn std::er
     // id, and the target matches a recompiled one to what it deploys by them.
     // A deployment is the whole of what the target serves, so nothing it
     // references may live outside it: the boundary is empty.
+    let dependencies = super::capabilities_dependencies(req.capabilities)?;
+    let target = super::capabilities_target(req.capabilities)?;
     let (set, _) = load_and_gate(
         req.dir,
         super::capabilities_boundary(req.capabilities)?,
+        dependencies.as_ref(),
         true,
         req.deny_warnings,
         req.plugin_dirs,
     )?;
     match req.format {
-        CompileFormat::Deployment => {
-            emit_deployment(&set, require_output(req.output, "--format deployment")?)
-        }
+        CompileFormat::Deployment => emit_deployment(
+            &set,
+            require_output(req.output, "--format deployment")?,
+            target.as_ref(),
+        ),
     }
 }
 
@@ -109,6 +114,7 @@ pub(crate) fn run_compile(req: CompileRequest<'_>) -> Result<(), Box<dyn std::er
 fn emit_deployment(
     set: &orion_authoring::definitions::DefinitionSet,
     out: &str,
+    target: Option<&super::super::deployment_dir::TargetFingerprint>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let deployment = match orion_authoring::definitions::deployment::build(set) {
         Ok(deployment) => deployment,
@@ -149,6 +155,23 @@ fn emit_deployment(
     for (relative, bytes) in &deployment.files {
         let path = root.join(relative);
         std::fs::write(&path, bytes).map_err(|e| format!("write '{}': {e}", path.display()))?;
+    }
+    // The CLI's own record of what it compiled against. It is not part of the
+    // deployment the server reads; a compile without --capabilities removes a
+    // stale one rather than leave a target that no longer applies.
+    let target_path = root.join("target.json");
+    match target {
+        Some(target) => {
+            let bytes = serde_json::to_vec_pretty(target)
+                .map_err(|e| format!("serialize target.json: {e}"))?;
+            std::fs::write(&target_path, bytes)
+                .map_err(|e| format!("write '{}': {e}", target_path.display()))?;
+        }
+        None if target_path.is_file() => {
+            std::fs::remove_file(&target_path)
+                .map_err(|e| format!("remove stale '{}': {e}", target_path.display()))?;
+        }
+        None => {}
     }
     let counts = deployment.counts;
     println!(

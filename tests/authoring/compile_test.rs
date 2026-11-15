@@ -649,6 +649,132 @@ fn a_connector_call_names_an_operation_its_provider_declares() {
     assert!(ok, "{report}");
 }
 
+/// A set whose edition provider declares a dependency: models needs a
+/// `com.orion.storage` connection bound as `artifact_store`.
+#[test]
+fn provider_bindings_are_checked_against_the_target_capabilities() {
+    let scratch = ScratchDir::new("compile-bindings");
+    let dir = scratch.path();
+    std::fs::write(
+        dir.join("conn-store.json"),
+        r#"{ "name": "artifact-store", "provider": "com.orion.storage",
+             "config": { "bucket": "models" } }"#,
+    )
+    .unwrap();
+    let model = |bindings: &str| {
+        format!(
+            r#"{{ "name": "classifier", "provider": "com.orion.models",
+                 "config": {{ "model": "classifier" }}{bindings} }}"#
+        )
+    };
+    std::fs::write(
+        dir.join("conn-model.json"),
+        model(r#", "bindings": { "artifact_store": "artifact-store" }"#),
+    )
+    .unwrap();
+    let capabilities = dir.join("caps.json");
+    let digest = format!("sha256:{}", "a".repeat(64));
+    std::fs::write(
+        &capabilities,
+        serde_json::json!({
+            "api_version": 1,
+            "edition": "enterprise",
+            "channel_drivers": ["cron", "http", "rest"],
+            "channel_driver_info": [],
+            "provider_backends": [
+                { "kind": "rust", "driver_id": "com.orion.storage",
+                  "package_digest": digest.clone(),
+                  "operations": { "presign": {} } },
+                { "kind": "rust", "driver_id": "com.orion.models",
+                  "package_digest": digest.clone(),
+                  "operations": { "infer": {} },
+                  "dependencies": { "artifact_store": {
+                      "provider": "com.orion.storage",
+                      "operations": ["presign"],
+                      "optional": false } } }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let compile = |out: &str| {
+        run(&[
+            "compile",
+            dir.to_str().unwrap(),
+            "--capabilities",
+            capabilities.to_str().unwrap(),
+            "-o",
+            dir.join(out).to_str().unwrap(),
+        ])
+    };
+
+    // The valid binding compiles, and the target is recorded beside the
+    // deployment it applies to.
+    let (ok, report) = compile("dist");
+    assert!(ok, "{report}");
+    let target = read_json(&dir.join("dist/target.json"));
+    assert_eq!(target["api_version"], 1);
+    assert_eq!(target["edition"], "enterprise");
+    assert_eq!(
+        target["provider_digests"]["com.orion.models"],
+        digest.clone()
+    );
+
+    // An alias the provider does not declare.
+    std::fs::write(
+        dir.join("conn-model.json"),
+        model(r#", "bindings": { "artifact_store2": "artifact-store" }"#),
+    )
+    .unwrap();
+    let (ok, report) = compile("dist-bad-alias");
+    assert!(!ok, "{report}");
+    assert!(
+        report.contains("declares no dependency 'artifact_store2'"),
+        "{report}"
+    );
+
+    // A required dependency left unbound.
+    std::fs::write(dir.join("conn-model.json"), model("")).unwrap();
+    let (ok, report) = compile("dist-missing");
+    assert!(!ok, "{report}");
+    assert!(
+        report.contains("requires dependency 'artifact_store'"),
+        "{report}"
+    );
+
+    // A target on the wrong provider.
+    std::fs::write(
+        dir.join("conn-smtp.json"),
+        r#"{ "name": "mailer", "provider": "com.orion.smtp",
+             "config": { "host": "localhost" } }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("conn-model.json"),
+        model(r#", "bindings": { "artifact_store": "mailer" }"#),
+    )
+    .unwrap();
+    let (ok, report) = compile("dist-wrong-provider");
+    assert!(!ok, "{report}");
+    assert!(
+        report.contains("runs on 'com.orion.smtp'")
+            && report.contains("requires 'com.orion.storage'"),
+        "{report}"
+    );
+    std::fs::remove_file(dir.join("conn-smtp.json")).unwrap();
+    std::fs::write(
+        dir.join("conn-model.json"),
+        model(r#", "bindings": { "artifact_store": "artifact-store" }"#),
+    )
+    .unwrap();
+
+    // Compiling without --capabilities removes the stale target record.
+    let (ok, report) = compile_deployment(dir, &dir.join("dist"));
+    assert!(ok, "{report}");
+    assert!(!dir.join("dist/target.json").exists());
+}
+
 #[test]
 fn an_edition_protocol_compiles_against_the_target_nodes_capabilities() {
     let scratch = deployment_set("compile-capabilities");

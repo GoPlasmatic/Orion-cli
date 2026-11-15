@@ -20,11 +20,37 @@ use anyhow::{Context, Result, bail};
 use orion_api::v2::{
     COMPILED_DEPLOYMENT_SCHEMA_VERSION, CompiledConnection, CompiledDeployment,
     ConnectionRevisionResponse, CreateConnectionRevisionRequest, Definition, DeploymentManifest,
-    EntityKind, EntityRef, ManifestMember,
+    EditionTier, EntityKind, EntityRef, ManifestMember,
 };
 use orion_client::V2Admin;
+use serde::{Deserialize, Serialize};
 
 use crate::client::OrionClient;
+
+/// What `compile --capabilities` recorded about the target it was compiled
+/// for. CLI-owned metadata: it is never sent to the server, and a directory
+/// without it still deploys.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TargetFingerprint {
+    pub schema_version: u64,
+    /// The v2 admin API revision, when the capabilities file named one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_version: Option<u32>,
+    /// The edition the target reported, when it reported one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edition: Option<EditionTier>,
+    /// The channel protocols the target served, when the file listed them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_drivers: Option<Vec<String>>,
+    /// Provider id → the digest the target reported for it.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub provider_digests: BTreeMap<String, String>,
+}
+
+impl TargetFingerprint {
+    pub const SCHEMA_VERSION: u64 = 1;
+}
 
 /// A deployment directory, read and checked against itself.
 #[derive(Debug)]
@@ -34,6 +60,8 @@ pub struct DeploymentDir {
     pub definitions: BTreeMap<String, PathBuf>,
     /// Connection id → its file.
     pub connections: BTreeMap<String, CompiledConnection>,
+    /// What `compile --capabilities` recorded, when it recorded anything.
+    pub target: Option<TargetFingerprint>,
 }
 
 impl DeploymentDir {
@@ -133,10 +161,31 @@ impl DeploymentDir {
                 }
             }
         }
+        let target_path = root.join("target.json");
+        let target = if target_path.is_file() {
+            let text = std::fs::read_to_string(&target_path)
+                .with_context(|| format!("reading '{}'", target_path.display()))?;
+            let target: TargetFingerprint = serde_json::from_str(&text).with_context(|| {
+                format!("'{}' is not a target fingerprint", target_path.display())
+            })?;
+            if target.schema_version != TargetFingerprint::SCHEMA_VERSION {
+                bail!(
+                    "'{}' has schema_version {}; this orion-cli reads {}",
+                    target_path.display(),
+                    target.schema_version,
+                    TargetFingerprint::SCHEMA_VERSION
+                );
+            }
+            Some(target)
+        } else {
+            None
+        };
+
         Ok(Self {
             deployment,
             definitions,
             connections,
+            target,
         })
     }
 }
@@ -296,11 +345,50 @@ pub async fn prepare(
         );
     }
 
+    // Read the target once: the channel protocols, the provider digests and
+    // the edition are all checks on what this directory is about to write.
+    let capabilities = super::v2::capabilities(client).await?;
+    if let Some(target) = &dir.target {
+        if let Some(api_version) = target.api_version
+            && api_version != capabilities.api_version
+        {
+            bail!(
+                "this directory was compiled against v2 admin API {api_version}, and the \
+                 target speaks {}: recompile it with the target's capabilities",
+                capabilities.api_version
+            );
+        }
+        if let Some(edition) = target.edition
+            && capabilities.edition < edition
+        {
+            eprintln!(
+                "warning: this directory was compiled against edition '{edition}', and the \
+                 target reports '{}'; its members are checked against the target's capabilities",
+                capabilities.edition
+            );
+        }
+    }
+
     for (digest, path) in &dir.definitions {
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("reading '{}'", path.display()))?;
         let definition: Definition = serde_json::from_str(&text)
             .with_context(|| format!("'{}' is not a definition", path.display()))?;
+        if let Definition::Channel(channel) = &definition
+            && !capabilities.channel_drivers.is_empty()
+            && !capabilities
+                .channel_drivers
+                .iter()
+                .any(|served| served.eq_ignore_ascii_case(&channel.protocol))
+        {
+            bail!(
+                "channel '{}' uses protocol '{}', which the target does not serve (it serves: \
+                 {}): compile with the target's capabilities",
+                channel.name,
+                channel.protocol,
+                capabilities.channel_drivers.join(", ")
+            );
+        }
         let stored = client
             .upload_definition(&definition)
             .await
@@ -327,11 +415,12 @@ pub async fn prepare(
 
     let mut connection_revisions: BTreeMap<String, (u64, String)> = BTreeMap::new();
     if !dir.connections.is_empty() {
-        let capabilities = client.runtime_capabilities().await?;
         let builtin: BTreeMap<String, String> = capabilities
             .provider_backends
-            .into_iter()
-            .filter_map(|backend| Some((backend.driver_id, backend.package_digest?)))
+            .iter()
+            .filter_map(|backend| {
+                Some((backend.driver_id.clone(), backend.package_digest.clone()?))
+            })
             .collect();
         let stored = client.list_connections().await?;
         for (id, connection) in &dir.connections {
@@ -459,6 +548,7 @@ pub fn default_idempotency_key(base_revision: u64, candidate_digest: &str) -> St
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used)]
 mod tests {
     use super::*;
     use serde_json::{Value, json};
@@ -475,6 +565,45 @@ mod tests {
             requires: Vec::new(),
             rollouts: Vec::new(),
         }
+    }
+
+    #[test]
+    fn a_compiled_directory_records_the_target_it_was_built_for() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("deployment.json"),
+            r#"{"schema_version":1,"members":[]}"#,
+        )
+        .unwrap();
+        let directory = DeploymentDir::read(dir.path()).unwrap();
+        assert!(directory.target.is_none());
+
+        std::fs::write(
+            dir.path().join("target.json"),
+            r#"{"schema_version":1,"api_version":1,"edition":"enterprise",
+                "channel_drivers":["rest","kafka"],
+                "provider_digests":{"com.orion.models":"sha256:aaaa"}}"#,
+        )
+        .unwrap();
+        let directory = DeploymentDir::read(dir.path()).unwrap();
+        let target = directory.target.expect("a target record");
+        assert_eq!(target.api_version, Some(1));
+        assert_eq!(target.edition, Some(EditionTier::Enterprise));
+        assert_eq!(
+            target.channel_drivers.as_deref(),
+            Some(&["rest".to_string(), "kafka".to_string()][..])
+        );
+        assert_eq!(
+            target
+                .provider_digests
+                .get("com.orion.models")
+                .map(String::as_str),
+            Some("sha256:aaaa")
+        );
+
+        std::fs::write(dir.path().join("target.json"), r#"{"schema_version":99}"#).unwrap();
+        let error = DeploymentDir::read(dir.path()).unwrap_err().to_string();
+        assert!(error.contains("schema_version 99"), "{error}");
     }
 
     #[test]

@@ -92,6 +92,8 @@ impl ClippyCmd {
             .map(|file| orion_common::config::load_config(Some(file)))
             .transpose()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let dependencies = super::capabilities_dependencies(self.capabilities.as_deref())
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         run_clippy(ClippyRequest {
             path,
             deny_warnings: self.deny_warnings,
@@ -104,6 +106,7 @@ impl ClippyCmd {
                 ..super::capabilities_boundary(self.capabilities.as_deref())
                     .map_err(|e| anyhow::anyhow!("{e}"))?
             },
+            dependencies: dependencies.as_ref(),
             config: config.as_ref(),
             fix: self.fix,
             fix_check: self.check,
@@ -132,6 +135,8 @@ pub(crate) struct ClippyRequest<'a> {
     /// Directories of plugin manifests beyond the set's own tree.
     pub(crate) plugin_dirs: &'a [String],
     pub(crate) boundary: orion_authoring::definitions::Boundary,
+    /// The target's provider dependency declarations, from `--capabilities`.
+    pub(crate) dependencies: Option<&'a super::ProviderDependencies>,
     /// The serving instance's config when `-c` named one — the rules that
     /// need it are skipped otherwise, and say so.
     pub(crate) config: Option<&'a orion_common::config::AppConfig>,
@@ -298,6 +303,15 @@ fn clippy_load(
         if report.set.is_empty() {
             eprintln!("error: no definitions found under '{}'", req.path);
             return Ok(None);
+        }
+        if let Some(dependencies) = req.dependencies {
+            let errors = super::check_provider_bindings(&report.set, dependencies);
+            for error in &errors {
+                eprintln!("error: {error}");
+            }
+            if !errors.is_empty() {
+                return Ok(None);
+            }
         }
         let raw = report
             .raw
