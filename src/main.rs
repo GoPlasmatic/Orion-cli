@@ -274,6 +274,10 @@ async fn run(cli: Cli) -> anyhow::Result<i32> {
             let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
+        Commands::CircuitBreakers(cmd) => {
+            let client = server_client(&cli).await?;
+            cmd.run(&client, &cli.output, cli.quiet, cli.yes).await
+        }
         Commands::Deployments(cmd) => {
             let client = server_client(&cli).await?;
             commands::v2::require_api_version(&client).await?;

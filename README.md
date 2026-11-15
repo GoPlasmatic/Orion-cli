@@ -71,6 +71,7 @@ what the previous revision deployed.
 | `connections` | List, create and probe immutable connection revisions |
 | `provider` | Author, lint, pack, upload, admit and revoke connector provider packages |
 | `cron` | The scheduled-run ledger — status, list, get, retry or cancel an occurrence |
+| `circuit-breakers` | Inspect the node-local breaker map and reset a key (fleet-wide in cluster mode) |
 | `send` | Send data through channels (sync or async; `--profile` for timing breakdown) |
 | `traces` | View and monitor execution traces |
 | `engine` | View what the engine on this node serves |
@@ -185,6 +186,18 @@ once, and every revision must appear in the channel's `requires`. `plan`
 validates those rules locally and prints the split before the request.
 A compiled directory names one definition per workflow id, so a canary over
 two revisions of one workflow is expressed with a hand-written manifest.
+
+### Cluster operations
+
+`deployments wait --target observed` prints which nodes have the revision,
+which are still converging and which built it degraded. Circuit breakers are
+node-local state; `reset` fans out to every node in cluster mode:
+
+```bash
+orion-cli deployments wait 7 --target observed --timeout-ms 30000
+orion-cli circuit-breakers list
+orion-cli circuit-breakers reset orders:db --yes
+```
 
 Add `--wait-ms 10000 --wait-target observed` to apply to wait for cluster
 convergence. It prints one result containing the apply receipt and the final

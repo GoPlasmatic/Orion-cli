@@ -773,10 +773,44 @@ async fn wait_for_convergence(
     let report = poll_convergence(client, revision, target, timeout_ms).await?;
     if quiet {
         println!("{revision}");
-    } else {
+    } else if matches!(format, OutputFormat::Json | OutputFormat::Yaml) {
         output::print_value(format, &serde_json::to_value(&report)?)?;
+    } else {
+        print_convergence(&report);
     }
     Ok(convergence_exit_code(revision, &report))
+}
+
+/// The fleet's view of one revision: which nodes have it, which are still
+/// converging, and which built it degraded.
+fn print_convergence(report: &ConvergenceStatusResponse) {
+    println!(
+        "{} revision {}",
+        "Convergence".bold(),
+        report.target_revision
+    );
+    println!(
+        "  Status:   {}",
+        if report.converged {
+            "converged".green().bold().to_string()
+        } else {
+            "pending".yellow().bold().to_string()
+        }
+    );
+    for (label, nodes) in [
+        ("Converged", &report.converged_nodes),
+        ("Pending", &report.pending_nodes),
+        ("Degraded", &report.degraded_nodes),
+    ] {
+        println!(
+            "  {label:<10} {}",
+            if nodes.is_empty() {
+                "-".dimmed().to_string()
+            } else {
+                nodes.join(", ")
+            }
+        );
+    }
 }
 
 fn convergence_exit_code(revision: u64, report: &ConvergenceStatusResponse) -> i32 {

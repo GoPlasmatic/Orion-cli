@@ -2,6 +2,7 @@ pub mod audit_logs;
 pub mod authoring;
 pub mod backups;
 pub mod cache;
+pub mod circuit_breakers;
 pub mod completions;
 pub mod config;
 pub mod connections;
@@ -88,6 +89,10 @@ pub enum Commands {
 
     /// Inspect scheduled runs of cron channels
     Cron(cron::CronCmd),
+
+    /// Inspect and reset connector circuit breakers
+    #[command(alias = "breakers")]
+    CircuitBreakers(circuit_breakers::CircuitBreakersCmd),
 
     /// Manage immutable v2 deployments, convergence, rollback, and edition preflight
     #[command(alias = "deploy")]

@@ -13,7 +13,7 @@
 - [x] Phase 3 — deployment manifest fidelity (bindings and `-f` canary; `-d` canary blocked on the upstream compiled format)
 - [x] Phase 4 — provider and connection UX
 - [x] Phase 5 — edition channel protocols (GraphQL via `--raw` and ingress guidance; SSE consume and custom transport headers deferred to `orion-client`)
-- [ ] Phase 6 — cluster operations
+- [x] Phase 6 — cluster operations
 - [ ] Phase 7 — CI, docs, skill and release
 
 ---
