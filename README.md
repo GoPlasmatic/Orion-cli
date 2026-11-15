@@ -249,6 +249,24 @@ orion-cli send orders --async-mode -d '{"amount":100}'
 orion-cli send orders --async-mode --wait --timeout 30 -d '{"amount":100}'
 ```
 
+### Edition protocols
+
+`send` speaks the data plane's JSON envelope. A Standard or Enterprise node may
+serve channels whose protocol has a different shape:
+
+```bash
+# graphql: a JSON GraphQL document, sent verbatim
+orion-cli send gql -d '{"query": "{ orders { id } }"}' --raw
+
+# sse: timer-fed, so there is nothing to send; consume the stream
+curl -N "$ORION_SERVER_URL/api/v2/data/events"
+
+# kafka: ingress-fed, with no HTTP route; publish through the broker
+```
+
+`orion-cli deployments capabilities` lists the protocols a node serves, and a
+`405` from `send` names the non-HTTP ingress instead of guessing.
+
 ---
 
 ## Scheduled runs

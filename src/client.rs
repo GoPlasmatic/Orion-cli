@@ -251,6 +251,11 @@ fn error_hint(code: &str) -> &'static str {
             "\n  Hint: The node's edition does not serve this feature. Check \
              'orion-cli deployments capabilities' and use --require-edition to fail early"
         }
+        codes::METHOD_NOT_ALLOWED => {
+            "\n  Hint: A channel serves only its configured methods. A cron channel has no \
+             HTTP route (use 'orion-cli cron trigger'), and an ingress-fed channel such as \
+             kafka is reached through its transport, not the data plane"
+        }
         _ => "",
     }
 }
@@ -304,5 +309,12 @@ mod tests {
         assert!(hint.contains("edition"), "{hint}");
         assert!(hint.contains("deployments capabilities"), "{hint}");
         assert!(hint.contains("--require-edition"), "{hint}");
+    }
+
+    #[test]
+    fn a_method_refusal_names_the_non_http_ingresses() {
+        let hint = super::error_hint(orion_api::codes::METHOD_NOT_ALLOWED);
+        assert!(hint.contains("cron trigger"), "{hint}");
+        assert!(hint.contains("kafka"), "{hint}");
     }
 }

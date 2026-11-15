@@ -12,6 +12,14 @@ pass --raw to send the payload verbatim instead. Such a channel stamps its own
 metadata and accepts none from the caller, so --raw and --metadata are refused
 together.
 
+Edition protocols:
+  graphql   POST a JSON GraphQL document with --raw:
+            orion-cli send gql -d '{"query": "{ orders { id } }"}' --raw
+  sse       timer-fed; consume the stream with:
+            curl -N <server>/api/v2/data/<channel>
+  kafka     ingress-fed; it has no HTTP route. Send through the broker, or
+            check 'orion-cli deployments capabilities' for what the node serves.
+
 Exit codes with --wait:
   0 = trace completed, 1 = trace failed, 3 = timed out
 

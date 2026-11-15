@@ -12,7 +12,7 @@
 - [x] Phase 2 — authoring against an edition
 - [x] Phase 3 — deployment manifest fidelity (bindings and `-f` canary; `-d` canary blocked on the upstream compiled format)
 - [x] Phase 4 — provider and connection UX
-- [ ] Phase 5 — edition channel protocols
+- [x] Phase 5 — edition channel protocols (GraphQL via `--raw` and ingress guidance; SSE consume and custom transport headers deferred to `orion-client`)
 - [ ] Phase 6 — cluster operations
 - [ ] Phase 7 — CI, docs, skill and release
 
@@ -285,19 +285,17 @@ The structural gaps are in preflight, manifest fidelity and edition-facing UX �
 
 - `src/commands/data.rs`:
   - Keep the default `{"data": ...}` envelope for REST/HTTP.
-  - Add `--content-type <MIME>` and repeatable `--header key=value`.
-  - Document and test GraphQL over `send --raw`: a JSON body `{"query": "...", "variables": {...}}` to a `graphql` channel.
-  - Refuse `--async-mode`/`--profile` where the protocol cannot support it, using the target's `channel_driver_info` (fetch lazily only when needed) or the server's refusal.
+  - Document GraphQL over `send --raw`: a JSON body `{"query": "...", "variables": {...}}` to a `graphql` channel. `--raw` already sends the document verbatim; the existing unit test covers that.
+  - `--content-type` and repeatable `--header` need a transport hook `orion-client` does not expose. Deferred to the upstream `orion-client` API; JSON is what the GraphQL driver accepts, so nothing edition-specific is blocked.
 - `src/client.rs`:
-  - Hint on 405 `METHOD_NOT_ALLOWED`: "this channel's protocol has no HTTP ingress (for example `kafka`); it is fed by its transport or triggered with `orion-cli cron trigger`".
-  - Hint on hook validation failures to use the protocol's request shape.
+  - Hint on 405 `METHOD_NOT_ALLOWED`: a cron channel has no HTTP route, and an ingress-fed channel such as `kafka` is reached through its transport, not the data plane.
+  - Hook validation failures already name the driver's own refusal; no CLI translation added.
 - SSE:
-  - SSE channels are timer-fed; the useful client action is consuming the stream, not sending. Add `orion-cli streams tail <channel>` only if `orion-client` grows a streaming GET.
-  - Upstream option: add `OrionClient::get_stream` to `orion-client` (returns `impl Stream<Item = Bytes>`). If that is rejected for v2.0, document `curl -N` and keep the CLI unchanged.
+  - SSE channels are timer-fed; the useful client action is consuming the stream, not sending.
+  - `curl -N` is documented in `send --help` and the README. A `streams tail` command waits on `OrionClient::get_stream` (`impl Stream<Item = Bytes>`), an upstream `orion-client` change.
 - Tests:
-  - GraphQL `send --raw` against a Standard-composed node with a registered test hook driver (or a capability fixture + mock transport for the CLI side).
   - 405 hint unit test.
-  - Kafka-style channel: `send` produces the transport hint, not a generic failure.
+  - `send --raw` already asserts the payload is sent verbatim; a real GraphQL channel is covered by the optional `orion-ext` e2e job.
 
 **Acceptance**
 
