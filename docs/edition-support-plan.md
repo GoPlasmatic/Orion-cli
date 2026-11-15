@@ -10,7 +10,7 @@
 - [x] Phase 0 — rebase on the Orion v2.0 release commit
 - [x] Phase 1 — edition discovery and preflight
 - [x] Phase 2 — authoring against an edition
-- [ ] Phase 3 — deployment manifest fidelity
+- [x] Phase 3 — deployment manifest fidelity (bindings and `-f` canary; `-d` canary blocked on the upstream compiled format)
 - [ ] Phase 4 — provider and connection UX
 - [ ] Phase 5 — edition channel protocols
 - [ ] Phase 6 — cluster operations

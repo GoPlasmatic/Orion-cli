@@ -158,6 +158,34 @@ revision mismatch or a channel protocol the target does not serve is refused
 before the first write. A directory compiled without `--capabilities` deploys
 exactly as before.
 
+### Canary rollout
+
+A channel can split its traffic across workflow revisions by carrying
+`rollouts` in a hand-written manifest (`deployments plan|apply -f`). This is a
+Standard and Enterprise feature; on a Community node the CLI refuses it before
+sending the request:
+
+```json
+{
+  "entity": { "kind": "channel", "id": "orders-api", "revision": 1 },
+  "definition_digest": "sha256:…",
+  "requires": [
+    { "kind": "workflow", "id": "orders", "revision": 1 },
+    { "kind": "workflow", "id": "orders", "revision": 2 }
+  ],
+  "rollouts": [
+    { "workflow_revision": 1, "start_bucket": 0, "end_bucket": 90 },
+    { "workflow_revision": 2, "start_bucket": 90, "end_bucket": 100 }
+  ]
+}
+```
+
+The intervals must cover `[0, 100)` exactly once, name each workflow revision
+once, and every revision must appear in the channel's `requires`. `plan`
+validates those rules locally and prints the split before the request.
+A compiled directory names one definition per workflow id, so a canary over
+two revisions of one workflow is expressed with a hand-written manifest.
+
 Add `--wait-ms 10000 --wait-target observed` to apply to wait for cluster
 convergence. It prints one result containing the apply receipt and the final
 `convergence` report. The original `evaluation` describes the receiving node

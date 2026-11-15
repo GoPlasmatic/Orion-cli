@@ -297,6 +297,7 @@ pub fn matching_connection_revision(
                 && row.provider_digest == wanted.provider_digest
                 && row.public_config == wanted.public_config
                 && row.secret_locators == wanted.secret_locators
+                && row.bindings == wanted.bindings
         })
         .collect();
     matches
@@ -457,7 +458,7 @@ pub async fn prepare(
                                 provider_digest: connection.provider_digest.clone(),
                                 public_config: connection.public_config.clone(),
                                 secret_locators: connection.secret_locators.clone(),
-                                bindings: Default::default(),
+                                bindings: connection.bindings.clone(),
                             },
                         )
                         .await
@@ -672,8 +673,32 @@ mod tests {
         );
         let other = CompiledConnection {
             public_config: json!({"connection_string": "sqlite:/tmp/y.db"}),
-            ..wanted
+            ..wanted.clone()
         };
         assert_eq!(matching_connection_revision(&other, &stored, None), None);
+
+        // A binding is part of the revision's identity: the same settings
+        // over a different dependency must not reuse the old revision.
+        let mut bound = wanted;
+        bound
+            .bindings
+            .insert("artifact_store".into(), "store-b".into());
+        assert_eq!(matching_connection_revision(&bound, &stored, None), None);
+        let bound_row = |rev: u64, target: &str| ConnectionRevisionResponse {
+            connection_id: "db".into(),
+            revision: rev,
+            provider_digest: "sha256:p".into(),
+            public_config: json!({"connection_string": "sqlite::memory:"}),
+            bindings: [("artifact_store".to_string(), target.to_string())]
+                .into_iter()
+                .collect(),
+            configuration_digest: format!("sha256:bound{rev}"),
+            ..Default::default()
+        };
+        let stored = vec![bound_row(1, "store-a"), bound_row(2, "store-b")];
+        assert_eq!(
+            matching_connection_revision(&bound, &stored, Some(2)),
+            Some((2, "sha256:bound2".to_string()))
+        );
     }
 }

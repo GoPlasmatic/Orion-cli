@@ -3,15 +3,17 @@
 //! `orion_client::V2Admin`: the request and response types are
 //! `orion_api::v2`'s, and no command builds a body or a path.
 
+use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap::{Args, Subcommand};
 use colored::Colorize;
 use orion_api::v2::{
     ApplyDeploymentRequest, ChannelDriverInfo, ConvergenceStatusResponse,
-    CreateDeploymentPlanRequest, CreateDeploymentRequest, DeploymentPlanResponse,
-    ProviderBackendInfo, RollbackDeploymentRequest, RuntimeCapabilitiesResponse,
+    CreateDeploymentPlanRequest, CreateDeploymentRequest, DeploymentManifest,
+    DeploymentPlanResponse, EditionTier, EntityKind, ProviderBackendInfo,
+    RollbackDeploymentRequest, RuntimeCapabilitiesResponse,
 };
 use orion_client::V2Admin;
 use tabled::Tabled;
@@ -374,6 +376,11 @@ impl DeploymentsCmd {
                         .map(|_| 0);
                 }
                 let manifest = load_request(file.as_deref().unwrap_or("-"), "deployment manifest")?;
+                validate_rollouts(&manifest)?;
+                require_canary_edition(client, &manifest).await?;
+                if !quiet {
+                    print_rollout_summary(&manifest);
+                }
                 let resp = client
                     .plan_deployment(&CreateDeploymentPlanRequest {
                         base_revision: base_revision.unwrap_or(0),
@@ -428,16 +435,19 @@ impl DeploymentsCmd {
                             reviewed_manifest_digest: plan.reviewed_manifest_digest,
                         }
                     }
-                    None => ApplyDeploymentRequest {
-                        idempotency_key: idempotency_key.clone().unwrap_or_default(),
-                        base_revision: base_revision.unwrap_or(0),
-                        manifest: load_request(
-                            file.as_deref().unwrap_or("-"),
-                            "deployment manifest",
-                        )?,
-                        reason: reason.clone(),
-                        reviewed_manifest_digest: reviewed_digest.clone().unwrap_or_default(),
-                    },
+                    None => {
+                        let manifest =
+                            load_request(file.as_deref().unwrap_or("-"), "deployment manifest")?;
+                        validate_rollouts(&manifest)?;
+                        require_canary_edition(client, &manifest).await?;
+                        ApplyDeploymentRequest {
+                            idempotency_key: idempotency_key.clone().unwrap_or_default(),
+                            base_revision: base_revision.unwrap_or(0),
+                            manifest,
+                            reason: reason.clone(),
+                            reviewed_manifest_digest: reviewed_digest.clone().unwrap_or_default(),
+                        }
+                    }
                 };
                 let resp = client
                     .create_deployment(&CreateDeploymentRequest::Apply(body))
@@ -549,6 +559,129 @@ impl DeploymentsCmd {
                 Ok(0)
             }
         }
+    }
+}
+
+/// A canary is a channel member's `rollouts`: disjoint buckets covering
+/// `[0, 100)`, each naming a workflow revision the channel already requires.
+/// The server enforces the same rules; catching them here names the member
+/// before an apply is sent.
+fn validate_rollouts(manifest: &DeploymentManifest) -> Result<()> {
+    for member in &manifest.members {
+        if member.rollouts.is_empty() {
+            continue;
+        }
+        let id = &member.entity.id;
+        if member.entity.kind != EntityKind::Channel {
+            bail!(
+                "{} '{}' carries rollouts, and only a channel may split traffic across \
+                 workflow revisions",
+                member.entity.kind,
+                id
+            );
+        }
+        let mut next_bucket = 0u8;
+        let mut revisions = BTreeSet::new();
+        for interval in &member.rollouts {
+            if interval.start_bucket != next_bucket {
+                bail!(
+                    "channel '{id}' rollout interval [{}, {}) does not start at bucket \
+                     {next_bucket}: intervals must cover [0, 100) without a gap or overlap",
+                    interval.start_bucket,
+                    interval.end_bucket
+                );
+            }
+            if interval.end_bucket <= interval.start_bucket {
+                bail!(
+                    "channel '{id}' rollout interval [{}, {}) is empty",
+                    interval.start_bucket,
+                    interval.end_bucket
+                );
+            }
+            if interval.end_bucket > 100 {
+                bail!(
+                    "channel '{id}' rollout ends at bucket {}, past 100",
+                    interval.end_bucket
+                );
+            }
+            if !revisions.insert(interval.workflow_revision) {
+                bail!(
+                    "channel '{id}' names workflow revision {} in more than one rollout \
+                     interval",
+                    interval.workflow_revision
+                );
+            }
+            if !member.requires.iter().any(|required| {
+                required.kind == EntityKind::Workflow
+                    && required.revision == interval.workflow_revision
+            }) {
+                bail!(
+                    "channel '{id}' rolls traffic to workflow revision {}, which its \
+                     `requires` does not name: add that revision to the channel's requires",
+                    interval.workflow_revision
+                );
+            }
+            next_bucket = interval.end_bucket;
+        }
+        if next_bucket != 100 {
+            bail!(
+                "channel '{id}' rollout covers [0, {next_bucket}), not [0, 100): add the \
+                 interval that carries the rest of the traffic"
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Whether the manifest splits any channel's traffic. A canary is a Standard
+/// and Enterprise feature, so only these manifests need the edition read.
+fn has_rollouts(manifest: &DeploymentManifest) -> bool {
+    manifest
+        .members
+        .iter()
+        .any(|member| !member.rollouts.is_empty())
+}
+
+/// Refuse a canary on a Community node before the request, with both the
+/// feature and the reported edition named. The server's own `TIER_NOT_ENABLED`
+/// remains the authority.
+async fn require_canary_edition(client: &OrionClient, manifest: &DeploymentManifest) -> Result<()> {
+    if !has_rollouts(manifest) {
+        return Ok(());
+    }
+    let capabilities = super::v2::capabilities(client).await?;
+    if capabilities.edition < EditionTier::Standard {
+        bail!(
+            "canary rollout (a channel's `rollouts`) requires edition 'standard' or higher; \
+             this node reports '{}'",
+            capabilities.edition
+        );
+    }
+    Ok(())
+}
+
+/// Say what a hand-written manifest does to a channel's traffic.
+fn print_rollout_summary(manifest: &DeploymentManifest) {
+    for member in &manifest.members {
+        if member.rollouts.is_empty() {
+            continue;
+        }
+        let intervals: Vec<String> = member
+            .rollouts
+            .iter()
+            .map(|interval| {
+                format!(
+                    "workflow@{} buckets {}-{}",
+                    interval.workflow_revision, interval.start_bucket, interval.end_bucket
+                )
+            })
+            .collect();
+        eprintln!(
+            "{} channel '{}': {}",
+            "Canary:".bold(),
+            member.entity.id,
+            intervals.join(", ")
+        );
     }
 }
 
@@ -675,5 +808,100 @@ async fn poll_convergence(
             return Ok(resp);
         }
         tokio::time::sleep(Duration::from_millis(200).min(timeout.saturating_sub(elapsed))).await;
+    }
+}
+
+#[cfg(test)]
+#[expect(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use orion_api::v2::{EntityRef, ManifestMember, RolloutInterval};
+
+    fn member(rollouts: &[(u64, u8, u8)]) -> ManifestMember {
+        ManifestMember {
+            entity: EntityRef {
+                kind: EntityKind::Channel,
+                id: "orders".into(),
+                revision: 1,
+            },
+            definition_digest: format!("sha256:{}", "a".repeat(64)),
+            owning_package: None,
+            requires: vec![
+                EntityRef {
+                    kind: EntityKind::Workflow,
+                    id: "orders".into(),
+                    revision: 1,
+                },
+                EntityRef {
+                    kind: EntityKind::Workflow,
+                    id: "orders".into(),
+                    revision: 2,
+                },
+            ],
+            rollouts: rollouts
+                .iter()
+                .map(|(revision, start, end)| RolloutInterval {
+                    workflow_revision: *revision,
+                    start_bucket: *start,
+                    end_bucket: *end,
+                })
+                .collect(),
+        }
+    }
+
+    fn manifest(rollouts: &[(u64, u8, u8)]) -> DeploymentManifest {
+        DeploymentManifest::of_members(vec![member(rollouts)])
+    }
+
+    #[test]
+    fn a_partitioned_canary_is_accepted() {
+        validate_rollouts(&manifest(&[(1, 0, 90), (2, 90, 100)])).unwrap();
+        validate_rollouts(&manifest(&[(1, 0, 100)])).unwrap();
+        validate_rollouts(&manifest(&[])).unwrap();
+    }
+
+    #[test]
+    fn a_canary_must_partition_every_bucket_once() {
+        for (rollouts, expected) in [
+            (vec![(1, 0, 50)], "covers [0, 50), not [0, 100)"),
+            (vec![(1, 0, 0)], "is empty"),
+            (vec![(1, 0, 101)], "past 100"),
+            (
+                vec![(1, 0, 50), (2, 60, 100)],
+                "does not start at bucket 50",
+            ),
+            (vec![(1, 0, 50), (1, 50, 100)], "more than one rollout"),
+        ] {
+            let error = validate_rollouts(&manifest(&rollouts))
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains(expected), "{rollouts:?}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_canary_revision_must_be_required() {
+        let mut member = member(&[(1, 0, 50), (3, 50, 100)]);
+        member.requires.retain(|required| required.revision != 3);
+        let error = validate_rollouts(&DeploymentManifest::of_members(vec![member]))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("revision 3"), "{error}");
+    }
+
+    #[test]
+    fn only_a_channel_can_split_traffic() {
+        let mut member = member(&[(1, 0, 100)]);
+        member.entity.kind = EntityKind::Workflow;
+        let error = validate_rollouts(&DeploymentManifest::of_members(vec![member]))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("only a channel"), "{error}");
+    }
+
+    #[test]
+    fn a_manifest_without_rollouts_needs_no_edition_read() {
+        assert!(!has_rollouts(&manifest(&[])));
+        assert!(has_rollouts(&manifest(&[(1, 0, 100)])));
     }
 }
