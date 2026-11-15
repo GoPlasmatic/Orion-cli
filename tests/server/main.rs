@@ -14,4 +14,5 @@ mod common;
 
 mod api_contract_test;
 mod compiled_deployment_test;
+mod edition_test;
 mod plugin_signing_test;

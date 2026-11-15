@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Community, Standard and Enterprise from one binary.** The edition is read
+  from the target's `/runtime-capabilities`; there is no edition-specific
+  build. `deployments capabilities` renders the edition, admission policy,
+  channel drivers and provider backends as a human summary, and the global
+  `--require-edition community|standard|enterprise` refuses a lower target
+  before a command writes. `TIER_NOT_ENABLED` errors point at both.
+- **Authoring against a target.** `lint`, `compile`, `clippy` and `sql check`
+  accept a `deployments capabilities -o json` file through `--capabilities`.
+  Connections' `bindings` are checked against the provider's declared
+  dependencies, and `compile --capabilities` writes a CLI-owned `target.json`
+  beside the deployment. `plan|apply -d` refuses an API revision mismatch or a
+  channel protocol the target does not serve before uploading.
+- **Canary rollout.** Hand-written `-f` manifests may split a channel's
+  traffic across workflow revisions with `rollouts`; the CLI validates the
+  partition and each revision's presence in `requires`, and refuses the split
+  on a Community node before the request. Standard and Enterprise accept it.
+- **Edition provider and connection UX.** `provider list` shows tier and
+  admission/artifact state, `provider get` summarizes a package, and
+  `provider admit --lock` passes a provider lock. `connections list|get|probe`
+  are tables showing provider, bindings and locators; `connections create`
+  takes `--bind alias=connection` and `--secret path=env://NAME`.
+- **`circuit-breakers list|reset`.** Reads the node-local breaker map (naming
+  its scope and node) and resets a key, which fans out to every node in
+  cluster mode. `deployments wait --target observed` prints converged,
+  pending and degraded nodes.
+- A compiled connection's `bindings` are preserved when its revision is
+  created, and a binding change creates a new immutable revision.
+
 ### Fixed
 
 - Any nonempty `NO_COLOR` value disables color without boolean parsing,
@@ -14,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Build against the Orion v2.0 release commit `15c632a0` (the commit Orion Ext
+  is cut from) on every `orion-*` dependency and in CI's `ORION_REV`. The pin
+  moves to the `v2.0.0` tag when that tag exists.
 - Use the v2 deployment API with a compatible server. `compile` writes a
   revision-free deployment directory; `deployments plan|apply -d` uploads its
   definitions, assigns or reuses member revisions, and replaces the complete

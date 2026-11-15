@@ -14,7 +14,7 @@
 - [x] Phase 4 — provider and connection UX
 - [x] Phase 5 — edition channel protocols (GraphQL via `--raw` and ingress guidance; SSE consume and custom transport headers deferred to `orion-client`)
 - [x] Phase 6 — cluster operations
-- [ ] Phase 7 — CI, docs, skill and release
+- [x] Phase 7 — CI and docs (composed-edition tests in the existing `test` job; optional `orion-ext` e2e and the skill/docs cross-repo updates remain for their repositories)
 
 ---
 
@@ -357,7 +357,7 @@ The structural gaps are in preflight, manifest fidelity and edition-facing UX �
   - `../Orion/skills/orion/SKILL.md` + `references/cli.md`: teach the agent edition discovery, `--require-edition`, the capabilities-file compile flow, canary manifests and tier admission. This is a cross-repo PR.
   - `../Orion-docs` CLI reference: edition matrix and the new flags (cross-repo PR).
 - Release:
-  - CLI version `2.0.0`, tag `v2.0.0`; dist/Homebrew/GHCR unchanged.
+  - CLI version follows Orion's workspace version (`2.0.0-rc.1` until the v2.0.0 tag exists), tag with it; dist/Homebrew/GHCR unchanged.
   - Smoke: `orion-cli --version` names API v2.1 and editions; `deployments capabilities` against Community and Enterprise; `apply -d` of the same set to both (Community refuses edition-only members with the preflight message).
 
 **Acceptance**
@@ -430,14 +430,14 @@ Any upstream request-field addition moves `orion_api::v2::API_VERSION`; the serv
 
 - [ ] All `orion-*` dependencies and `ORION_REV` on the v2.0 release commit (or the `v2.0.0` tag once it exists).
 - [ ] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all-targets`, `cargo test --doc`.
-- [ ] `tests/e2e` green against the tagged `orion-server`.
+- [ ] `tests/e2e` green against the `orion-server` built from the pinned rev.
 - [ ] Composed Standard/Enterprise server tests green.
 - [ ] Optional: `ORION_EXT_BIN` e2e green against `orion-ext`.
 - [ ] `deployments capabilities` readable on Community and Enterprise; `--require-edition` matrix verified by hand.
 - [ ] Bindings round-trip and canary manifest verified on a real server.
 - [ ] README/CLAUDE/CHANGELOG/skill/docs updated.
 - [ ] `Cargo.lock` has no path sources; no `.cargo/config.toml` patch committed.
-- [ ] Tag `v2.0.0`; dist, Homebrew and GHCR publish; `--version` names the API revision and supported editions.
+- [ ] Tag the release; dist, Homebrew and GHCR publish; `deployments capabilities` identifies the edition on both a Community and an edition node.
 
 ---
 

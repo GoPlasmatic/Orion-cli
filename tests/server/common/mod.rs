@@ -27,6 +27,24 @@ pub async fn test_app() -> Router {
     orion::server::build_router(test_state_with_config(config).await)
 }
 
+/// A node whose composition reports `edition`, for the contracts a Standard
+/// and Enterprise node serves and Community refuses.
+pub async fn test_app_with_edition(edition: orion_api::v2::EditionTier) -> Router {
+    let mut config = AppConfig::default();
+    config.trace_storage.mode = orion::config::TraceStorageMode::Sync;
+    orion::server::build_router(test_state_with_edition(edition).await)
+}
+
+pub async fn test_state_with_edition(edition: orion_api::v2::EditionTier) -> AppState {
+    let mut config = AppConfig::default();
+    config.trace_storage.mode = orion::config::TraceStorageMode::Sync;
+    test_state_with_composition(
+        config,
+        orion::extensions::CompositionRoot::community().with_edition(edition),
+    )
+    .await
+}
+
 /// A full `AppState` through the server's real boot path,
 /// `orion::bootstrap::assemble`, so wiring cannot drift from production.
 ///
@@ -34,7 +52,14 @@ pub async fn test_app() -> Router {
 /// harness: storage falls back to in-memory SQLite (migrated by
 /// `init_pool`), the process-global metrics recorder is first-caller-wins,
 /// and the DLQ retry loop is off.
-pub async fn test_state_with_config(mut config: AppConfig) -> AppState {
+pub async fn test_state_with_config(config: AppConfig) -> AppState {
+    test_state_with_composition(config, orion::extensions::CompositionRoot::community()).await
+}
+
+async fn test_state_with_composition(
+    mut config: AppConfig,
+    composition: orion::extensions::CompositionBuilder,
+) -> AppState {
     let storage_config = if config.storage.url.is_empty()
         || config.storage.url == orion::config::StorageConfig::default().url
     {
@@ -58,7 +83,7 @@ pub async fn test_state_with_config(mut config: AppConfig) -> AppState {
             pool,
             metrics_handle,
         },
-        orion::extensions::CompositionRoot::community(),
+        composition,
     )
     .await
     .expect("assemble app state")
