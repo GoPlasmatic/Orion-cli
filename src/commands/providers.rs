@@ -51,6 +51,9 @@ pub enum ProviderSubcommand {
     Admit {
         /// Package digest (`sha256:<64 hex chars>`)
         digest: String,
+        /// A provider lock (`-` for stdin) the admission must verify against
+        #[arg(long, value_name = "FILE")]
+        lock: Option<String>,
     },
     /// Revoke a connector package by its SHA-256 digest
     Revoke {
@@ -109,10 +112,89 @@ struct ProviderRow {
     version: String,
     #[tabled(rename = "Kind")]
     implementation: String,
-    #[tabled(rename = "Admitted")]
-    admitted: String,
+    #[tabled(rename = "Tier")]
+    tier: String,
+    #[tabled(rename = "State")]
+    state: String,
     #[tabled(rename = "Digest")]
     digest: String,
+}
+
+/// A package at a glance: its tier and admission, what it declares, and the
+/// digest every other command takes.
+fn print_provider(resp: &orion_api::v2::ConnectorPackageResponse) {
+    let package = &resp.package;
+    println!(
+        "{} {}",
+        package.provider_id.bold(),
+        format!("v{}", package.version).dimmed()
+    );
+    println!("  Publisher:    {}", package.publisher);
+    println!("  Kind:         {}", package.implementation);
+    println!("  Tier:         {}", package.tier);
+    println!("  State:        {}", package_state(package));
+    println!("  Digest:       {}", package.digest);
+    match &resp.admission {
+        Some(admission) => {
+            println!(
+                "  Admission:    {} ({})",
+                admission.policy_id,
+                if admission.revoked {
+                    "revoked"
+                } else {
+                    "admitted"
+                }
+            );
+            println!("  Fingerprint:  {}", admission.admission_fingerprint);
+        }
+        None => println!("  Admission:    {}", "not admitted".dimmed()),
+    }
+    if let Some(operations) = package
+        .manifest
+        .get("operations")
+        .and_then(|o| o.as_object())
+    {
+        let names: Vec<&str> = operations.keys().map(String::as_str).collect();
+        println!(
+            "  Operations:   {}",
+            if names.is_empty() {
+                "(none)".dimmed().to_string()
+            } else {
+                names.join(", ")
+            }
+        );
+    }
+    if let Some(dependencies) = package
+        .manifest
+        .get("dependencies")
+        .and_then(|d| d.as_array())
+    {
+        let names: Vec<&str> = dependencies
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .collect();
+        if !names.is_empty() {
+            println!("  Dependencies: {}", names.join(", "));
+        }
+    }
+}
+
+/// The admission/artifact state in one cell: an edition operator needs to
+/// tell "not admitted" from "revoked" from "admitted but the artifact is
+/// quarantined" without reading JSON.
+fn package_state(package: &orion_api::v2::ConnectorPackageSummary) -> String {
+    let admission = if package.revoked {
+        "revoked".to_string()
+    } else if package.admitted {
+        "admitted".to_string()
+    } else {
+        "not admitted".to_string()
+    };
+    if package.artifact_state == orion_api::v2::PackageArtifactState::Active {
+        admission
+    } else {
+        format!("{admission} · artifact {}", package.artifact_state)
+    }
 }
 
 impl ProviderCmd {
@@ -158,7 +240,8 @@ impl ProviderCmd {
                         provider_id: p.provider_id.clone(),
                         version: p.version.clone(),
                         implementation: p.implementation.to_string(),
-                        admitted: p.admitted.to_string(),
+                        tier: p.tier.to_string(),
+                        state: package_state(p),
                         digest: p.digest.clone(),
                     })
                     .collect();
@@ -174,7 +257,11 @@ impl ProviderCmd {
                     println!("{}", resp.package.digest);
                     return Ok(0);
                 }
-                output::print_value(format, &serde_json::to_value(&resp)?)?;
+                if matches!(format, OutputFormat::Json | OutputFormat::Yaml) {
+                    output::print_value(format, &serde_json::to_value(&resp)?)?;
+                    return Ok(0);
+                }
+                print_provider(&resp);
                 Ok(0)
             }
             ProviderSubcommand::Upload { file } => {
@@ -187,9 +274,13 @@ impl ProviderCmd {
                 output::print_value(format, &serde_json::to_value(&resp)?)?;
                 Ok(0)
             }
-            ProviderSubcommand::Admit { digest } => {
+            ProviderSubcommand::Admit { digest, lock } => {
+                let lock = lock
+                    .as_deref()
+                    .map(|file| load_request::<serde_json::Value>(file, "provider lock"))
+                    .transpose()?;
                 let resp = client
-                    .admit_connector_package(digest, &AdmitPackageRequest::default())
+                    .admit_connector_package(digest, &AdmitPackageRequest { lock })
                     .await?;
                 if quiet {
                     println!("{digest}");

@@ -421,6 +421,7 @@ mod tests {
 
         let code = ProviderCmd::new(ProviderSubcommand::Admit {
             digest: "sha256:1111".to_string(),
+            lock: None,
         })
         .run(&client, &fmt, true)
         .await
@@ -436,6 +437,8 @@ mod tests {
         let code = ConnectionsCmd::new(ConnectionsSubcommand::Create {
             id: "cache-1".to_string(),
             file: conn_file.to_string_lossy().to_string(),
+            bind: Vec::new(),
+            secret: Vec::new(),
         })
         .run(&client, &fmt, true)
         .await

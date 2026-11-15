@@ -11,7 +11,7 @@
 - [x] Phase 1 — edition discovery and preflight
 - [x] Phase 2 — authoring against an edition
 - [x] Phase 3 — deployment manifest fidelity (bindings and `-f` canary; `-d` canary blocked on the upstream compiled format)
-- [ ] Phase 4 — provider and connection UX
+- [x] Phase 4 — provider and connection UX
 - [ ] Phase 5 — edition channel protocols
 - [ ] Phase 6 — cluster operations
 - [ ] Phase 7 — CI, docs, skill and release

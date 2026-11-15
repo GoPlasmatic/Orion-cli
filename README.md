@@ -195,6 +195,36 @@ to stderr and exits 3; `--quiet` prints only the revision. Standalone
 
 ---
 
+## Providers and connections
+
+`provider list` shows each package's tier and admission/artifact state, so an
+edition operator can tell what the node will admit without reading JSON.
+`provider admit` takes the provider lock the admission must verify against:
+
+```bash
+orion-cli provider list
+orion-cli provider admit sha256:… --lock provider-lock.json
+```
+
+A connection over a provider that declares dependencies binds each alias to a
+connection of the deployment. The flags are a convenience over the JSON file,
+and every bound target must itself be in the deployment:
+
+```bash
+orion-cli connections create classifier --file conn.json \
+  --bind artifact_store=artifact-store \
+  --secret auth.token=env://MODEL_TOKEN
+orion-cli connections list
+orion-cli connections get classifier
+orion-cli connections probe classifier   # exits 2 when unhealthy
+```
+
+`--secret` takes a locator (`env://NAME`, `vault://…`), never the secret
+itself. `connections get` prints locators, public settings and bindings; the
+probe view adds the failure class and effect status.
+
+---
+
 ## Sending Data
 
 [Processing modes](https://docs.goplasmatic.io/reference/data-api.html) for any workload:
