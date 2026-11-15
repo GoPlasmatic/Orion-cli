@@ -471,8 +471,16 @@ fn the_unrolled_example_compiles_to_one_step_per_seat_and_runs() {
         .filter_map(|t| t["id"].as_str())
         .collect();
     assert_eq!(ids, ["parse", "score0", "score1", "score2", "score3"]);
+    // Running the expander over the compiled form again must find nothing to
+    // do. `residue` is crate-private in v2.0, so this uses the public pipeline:
+    // an empty return means no pass had any source form left to rewrite.
+    let mut canonical = workflow.clone();
+    let shared = orion_authoring::definitions::SharedDefinitions::default();
+    let cx = orion_authoring::definitions::compile::Cx::detached(&shared, "compiled workflow");
+    let mut findings: Vec<orion_authoring::definitions::Diagnostic> = Vec::new();
     assert!(
-        orion_authoring::definitions::compile::residue(&workflow, "").is_empty(),
+        orion_authoring::definitions::compile::compile(&mut canonical, &cx, &mut findings)
+            .is_empty(),
         "{workflow}"
     );
 

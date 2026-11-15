@@ -58,7 +58,7 @@ build_binaries() {
     if [[ -z "$ORION_BIN" || ! -x "$ORION_BIN" ]]; then
         echo -e "${RED}orion-server binary not found${ORION_BIN:+ at $ORION_BIN}${RESET}" >&2
         echo "  Set ORION_BIN, or install one on PATH:" >&2
-        echo "  cargo install --git https://github.com/GoPlasmatic/Orion --tag <tag> orion-server --locked" >&2
+        echo "  cargo install --git https://github.com/GoPlasmatic/Orion --rev <rev> orion-server --locked" >&2
         exit 1
     fi
 

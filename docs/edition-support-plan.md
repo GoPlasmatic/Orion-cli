@@ -62,7 +62,7 @@ The structural gaps are in preflight, manifest fidelity and edition-facing UX â€
 
 | # | Gap | Severity | Evidence |
 |---|---|---|---|
-| 1 | Pinned to `v2.0.0-rc.1`, not the v2.0 release | Blocker | `Cargo.toml:50-88`, `.github/workflows/ci.yml:36`, `README.md:325,385` |
+| 1 | Pinned to `v2.0.0-rc.1`, a tag that does not exist on the remote and is not the v2.0 release commit | Blocker | `Cargo.toml:50-88`, `.github/workflows/ci.yml:36`, `README.md:325,385` |
 | 2 | `CompiledConnection.bindings` is dropped when creating connection revisions, so edition providers with dependencies (models â†’ storage) cannot deploy | High | `src/commands/deployment_dir.rs:363-373` |
 | 3 | Connection revision matching ignores `bindings`, so a binding change reuses the wrong immutable revision | High | `src/commands/deployment_dir.rs:246-258` |
 | 4 | Compiled deployment directories cannot express canary rollouts; only hand-written manifests can | High | `orion_api::v2::manifest::CompiledMember` has no `rollouts`; `ManifestMember` does |
@@ -99,9 +99,9 @@ The structural gaps are in preflight, manifest fidelity and edition-facing UX â€
 
 **Work items**
 
-- Move every `orion-*` dependency and the `orion-server` dev-dependency to the `v2.0.0` tag (`Cargo.toml:50-88`), set `package.version = "2.0.0"`.
-- Set `ORION_TAG: v2.0.0` in `.github/workflows/ci.yml`; update `README.md`, `CLAUDE.md`, `tests/e2e/README.md` and the `cargo install --git ... --tag` examples.
-- `cargo update` and commit the tag-based `Cargo.lock` (never a lock produced under the `.cargo/config.toml` patch).
+- Move every `orion-*` dependency and the `orion-server` dev-dependency to the v2.0 release commit `15c632a0` (`Cargo.toml:50-88`) â€” the same commit Orion Ext is cut from. No `v2.0.0` tag exists yet, so the pin is a `rev`; the CLI version stays `2.0.0-rc.1` until Orion's workspace version moves.
+- Rename CI's `ORION_TAG` to `ORION_REV` and install the server with `cargo install --rev`; update `README.md`, `CLAUDE.md`, `tests/e2e/README.md` and every install example.
+- `cargo update` and commit the rev-based `Cargo.lock` (never a lock produced under the `.cargo/config.toml` patch; generate it with the patch disabled and a local git mirror if the rev is not on GitHub yet).
 - Fix the type/API fallout:
   - `ProviderBackendInfo.dependencies` is new in v2.0: update every struct literal/fixture in `src/commands/v2.rs` and the capability fixtures.
   - `CompiledConnection.bindings` is new in v2.0: update the fixtures in `src/commands/deployment_dir.rs` and `tests/server/compiled_deployment_test.rs`.
@@ -111,7 +111,8 @@ The structural gaps are in preflight, manifest fidelity and edition-facing UX â€
 **Acceptance**
 
 - `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all-targets`, `tests/e2e` and `deployments_dir_e2e` are green.
-- `rg 'rc\.1'` finds no release references outside history/changelog.
+- No `tag = "v2.0.0-rc.1"` or `ORION_TAG` reference remains in the build, CI or docs.
+- The `Cargo.lock` orion-* entries carry the git source and rev, not path sources.
 - The API-version guard still refuses a server speaking another revision.
 
 ---
@@ -400,7 +401,7 @@ Any upstream request-field addition moves `orion_api::v2::API_VERSION`; the serv
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Orion v2.0 tag not yet published | Phase 0 blocks | Pin the release SHA in every `orion-*` line and `ORION_TAG`; switch to the tag in one commit when it exists |
+| Orion v2.0 tag not yet published | Phase 0 pins a commit | Pin the release SHA `15c632a0` in every `orion-*` line and `ORION_REV`; switch to the tag in one commit when it exists |
 | Upstream API changes slip | Phases 2â€“3 slip | Sequence the Orion PRs first; keep CLI fallbacks (warning-only binding check, `-f` canary) so v2.0 ships |
 | Private `orion-ext` unavailable in public CI | Real edition regression risk | Compose Standard/Enterprise from Community for contract tests; keep optional private e2e; rely on Orion-ext CI for drivers |
 | CLI starts hardcoding `com.orion.*` | Drift from Orion-ext | Review rule: only capabilities data and `orion_api` vocabulary in `src/` |
@@ -419,7 +420,7 @@ Any upstream request-field addition moves `orion_api::v2::API_VERSION`; the serv
 
 ## 10. Release checklist
 
-- [ ] All `orion-*` dependencies and `ORION_TAG` on `v2.0.0`.
+- [ ] All `orion-*` dependencies and `ORION_REV` on the v2.0 release commit (or the `v2.0.0` tag once it exists).
 - [ ] `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all-targets`, `cargo test --doc`.
 - [ ] `tests/e2e` green against the tagged `orion-server`.
 - [ ] Composed Standard/Enterprise server tests green.
@@ -434,7 +435,7 @@ Any upstream request-field addition moves `orion_api::v2::API_VERSION`; the serv
 
 ## 11. Open questions
 
-1. **Pin:** Is the v2.0.0 tag published on both repositories, or should Phase 0 pin release SHAs?
+1. **Pin:** ~~Is the v2.0.0 tag published on both repositories, or should Phase 0 pin release SHAs?~~ Resolved: no v2 tag exists, so Phase 0 pins Community commit `15c632a0` (the commit Orion Ext is cut from) and CI tracks `ORION_REV`. Move the whole pin to the tag when it is published.
 2. **Canary authoring:** Is a hand-written manifest acceptable for v2.0, or is `compile`-produced canary a release requirement (which pulls in the upstream `CompiledMember` change)?
 3. **SSE/GraphQL:** Must the CLI consume SSE and send GraphQL in v2.0, or are hints plus `--raw` + documented `curl` enough?
 4. **Private CI:** Is there a runner/token that can fetch an `orion-ext` binary for the optional edition e2e job?

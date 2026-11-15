@@ -28,12 +28,12 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  # The Orion release this CLI is built against: the `tag` on every orion-*
+  # The Orion release this CLI is built against: the `rev` on every orion-*
   # dependency in Cargo.toml. The e2e and examples jobs run against an
-  # orion-server, and Orion's examples, from the same tag. Bump the two
-  # together.
+  # orion-server, and Orion's examples, from the same commit. Bump the two
+  # together; move to a tag when v2.0.0 exists.
   ORION_REPO: GoPlasmatic/Orion
-  ORION_TAG: v2.0.0-rc.1
+  ORION_REV: 15c632a099a989ca48e8a3d16ba2beb7901d2a29
 
 jobs:
   fmt:
@@ -134,7 +134,7 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ env.ORION_REPO }}
-          ref: ${{ env.ORION_TAG }}
+          ref: ${{ env.ORION_REV }}
           path: orion-src
 
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
@@ -207,7 +207,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: server-bin
-          key: orion-server-${{ env.ORION_TAG }}-${{ runner.os }}-rust-1.100
+          key: orion-server-${{ env.ORION_REV }}-${{ runner.os }}-rust-1.100
 
       - name: Install system dependencies
         if: steps.cache.outputs.cache-hit != 'true'
@@ -216,7 +216,7 @@ jobs:
       - name: Install orion-server from the tag
         if: steps.cache.outputs.cache-hit != 'true'
         run: >-
-          cargo install --git "https://github.com/${ORION_REPO}" --tag "${ORION_TAG}"
+          cargo install --git "https://github.com/${ORION_REPO}" --rev "${ORION_REV}"
           orion-server --locked --root server-bin
 
       - name: Upload the server binary
@@ -247,7 +247,7 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ env.ORION_REPO }}
-          ref: ${{ env.ORION_TAG }}
+          ref: ${{ env.ORION_REV }}
           path: orion-src
 
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
@@ -305,7 +305,7 @@ jobs:
         with:
           persist-credentials: false
           repository: ${{ env.ORION_REPO }}
-          ref: ${{ env.ORION_TAG }}
+          ref: ${{ env.ORION_REV }}
           path: orion-src
 
       - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)

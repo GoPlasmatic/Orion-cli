@@ -319,17 +319,19 @@ Contributions are welcome! Please open an issue or submit a pull request on [Git
 
 The CLI is built from the Orion Community crates (`orion-api`, `orion-client`,
 `orion-authoring`, `orion-engine`, …), declared in `Cargo.toml` as git
-dependencies on one Orion release tag:
+dependencies on one Orion release commit:
 
 ```toml
-orion-api = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+orion-api = { git = "https://github.com/GoPlasmatic/Orion", rev = "15c632a099a989ca48e8a3d16ba2beb7901d2a29" }
 ```
 
-Bump that tag on every orion-* line together (the `server` test binary's
-`orion-server` dev-dependency included), set `ORION_TAG` in
-`.github/workflows/ci.yml` to the same tag, and run `cargo update` so
-`Cargo.lock` follows. The tag must exist on GitHub before a clean clone (or
-CI) can build.
+The v2.0 release has no tag yet, so the pin is the release commit Orion Ext
+is cut from. Bump that rev on every orion-* line together (the `server` test
+binary's `orion-server` dev-dependency included), set `ORION_REV` in
+`.github/workflows/ci.yml` to the same commit, and run `cargo update` so
+`Cargo.lock` follows. The commit must be reachable on GitHub before a clean
+clone (or CI) can build; move the whole pin to the `v2.0.0` tag when it
+exists.
 
 ```bash
 cargo build                                  # Build
@@ -360,12 +362,12 @@ orion-server = { path = "/path/to/Orion/crates/orion-server" }
 Two things to know:
 
 - Cargo still fetches the git source named in `Cargo.toml` before applying
-  the patch, so the tag must be reachable — on GitHub, or through a local
+  the patch, so the rev must be reachable — on GitHub, or through a local
   mirror mapped with git's `url.<base>.insteadOf` (and
   `CARGO_NET_GIT_FETCH_WITH_CLI=true`).
 - With the patch active, cargo rewrites the orion-* entries in `Cargo.lock`
   to path sources. Do not commit that: `git checkout Cargo.lock` before
-  committing (CI builds with `--locked` against the tag).
+  committing (CI builds with `--locked` against the rev).
 
 ### Tests
 
@@ -382,7 +384,7 @@ Two things to know:
   [its README](tests/e2e/README.md):
 
 ```bash
-cargo install --git https://github.com/GoPlasmatic/Orion --tag v2.0.0-rc.1 orion-server --locked
+cargo install --git https://github.com/GoPlasmatic/Orion --rev 15c632a099a989ca48e8a3d16ba2beb7901d2a29 orion-server --locked
 ORION_EXAMPLES_DIR=/path/to/Orion/examples ./tests/e2e/run.sh
 ```
 

@@ -401,6 +401,7 @@ mod tests {
                 message: "bad".into(),
                 details: vec![orion_api::FieldError::new("a.b", "REQUIRED", "missing")],
                 request_id: Some("req-1".into()),
+                connector: None,
             },
         };
         for err in [

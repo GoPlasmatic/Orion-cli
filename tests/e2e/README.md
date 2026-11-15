@@ -14,7 +14,7 @@ The server and the example packages are Orion's: point the runner at an
 tag.
 
 ```bash
-cargo install --git https://github.com/GoPlasmatic/Orion --tag <tag> orion-server --locked
+cargo install --git https://github.com/GoPlasmatic/Orion --rev <rev> orion-server --locked
 git clone --branch <tag> https://github.com/GoPlasmatic/Orion ../Orion
 
 export ORION_EXAMPLES_DIR=../Orion/examples

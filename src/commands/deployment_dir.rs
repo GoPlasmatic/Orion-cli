@@ -518,6 +518,7 @@ mod tests {
             provider_digest: "sha256:p".into(),
             public_config: json!({"connection_string": "sqlite::memory:"}),
             secret_locators: BTreeMap::new(),
+            bindings: BTreeMap::new(),
         };
         let row = |rev: u64, config: Value| ConnectionRevisionResponse {
             connection_id: "db".into(),

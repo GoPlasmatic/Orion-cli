@@ -6,8 +6,8 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use colored::Colorize;
 use orion_api::v2::{
-    AdmitPackageRequest, ImplementationKind, RevokePackageRequest, ScaffoldRequest,
-    UploadPackageRequest,
+    AdmitPackageRequest, ImplementationKind, PackageFilesRequest, RevokePackageRequest,
+    ScaffoldRequest, UploadPackageRequest,
 };
 use orion_client::V2Admin;
 use tabled::Tabled;
@@ -232,14 +232,14 @@ impl ProviderCmd {
                 Ok(0)
             }
             ProviderSubcommand::Lint { file } => {
-                let req: UploadPackageRequest = load_request(file, "provider bundle")?;
+                let req: PackageFilesRequest = load_request(file, "provider bundle")?;
                 let resp = client.authoring_lint(&req).await?;
                 let valid = resp.valid;
                 output::print_value(format, &serde_json::to_value(&resp)?)?;
                 Ok(if valid { 0 } else { 2 })
             }
             ProviderSubcommand::Pack { file } => {
-                let req: UploadPackageRequest = load_request(file, "provider bundle")?;
+                let req: PackageFilesRequest = load_request(file, "provider bundle")?;
                 let resp = client.authoring_pack(&req).await?;
                 if quiet {
                     println!("{}", resp.package_digest);

@@ -530,6 +530,7 @@ mod tests {
                         driver_id: "org.orion.sqlite".into(),
                         package_digest: Some("sha256:p".into()),
                         operations: None,
+                        dependencies: None,
                     }]))
                 }
                 ("GET", "/api/v2/admin/connections?limit=1000") => {

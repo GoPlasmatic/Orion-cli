@@ -43,7 +43,7 @@ ORION_EXAMPLES_DIR="${ORION_EXAMPLES_DIR:-}"
 CASES_DIR="$ORION_EXAMPLES_DIR/use-cases"
 
 # The server is Orion's, not built here: ORION_BIN, else an orion-server on
-# PATH (`cargo install --git https://github.com/GoPlasmatic/Orion --tag <tag>
+# PATH (`cargo install --git https://github.com/GoPlasmatic/Orion --rev <rev>
 # orion-server`). The CLI defaults to this repository's debug build.
 ORION_BIN="${ORION_BIN:-$(command -v orion-server 2>/dev/null || true)}"
 ORION_CLI="${ORION_CLI:-${CARGO_TARGET_DIR:-$REPO_ROOT/target}/debug/orion-cli}"
