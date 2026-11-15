@@ -1,0 +1,99 @@
+[package]
+name = "orion-cli"
+# Not on crates.io: the `orion-cli` name there belongs to an unrelated crate.
+# The CLI ships through the dist installers, Homebrew, GHCR and
+# `cargo install --git`.
+publish = false
+# Tracks the Orion release whose crates it is built from (the `tag` on every
+# orion-* dependency below): one CLI version speaks one server's v2 API.
+version = "2.0.0-rc.1"
+edition = "2024"
+rust-version = "1.98"
+description = "Command-line client for the Orion declarative services runtime"
+license = "Apache-2.0"
+repository = "https://github.com/codetiger/Orion-cli"
+homepage = "https://docs.goplasmatic.io/"
+keywords = ["cli", "workflow", "microservices", "devops", "automation"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "orion-cli"
+path = "src/main.rs"
+
+# The CLI against an in-process orion-server: the tests that need both sides
+# of the wire. One binary, each file a module declared in its main.rs.
+[[test]]
+name = "server"
+path = "tests/server/main.rs"
+harness = true
+
+[lints.rust]
+# No code here needs unsafe.
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+panic = "warn"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+clap_complete = "4"
+colored = "3"
+tabled = "0.22"
+dirs = "7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-saphyr = { version = "2", default-features = false, features = ["serialize"] }
+# The Community crates this binary is built from, all at one Orion release.
+# The shared wire contract: the error envelope, status vocabulary and import
+# report this CLI reads are the same types the server serializes.
+orion-api = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+# The shared transport. That crate owns reqwest; the CLI has no direct HTTP
+# dependency.
+orion-client = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+# Same spec as orion-server so the lockfile carries one `toml` tree.
+toml = { version = "1.1", default-features = false, features = ["parse", "display", "serde"] }
+# Plugin uploads: the component travels as base64 inside the JSON body.
+base64 = "0.23"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal"] }
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+# Cancellation for the benchmark runner's Ctrl-C handling.
+tokio-util = "0.7"
+# The offline authoring tools (lint, compile, dry-run, test, fmt, clippy,
+# sql check, plugin signing) run the definition checks, the engine and the
+# plugin sandbox in-process, so this binary links them — the same crates the
+# server is built from, at the same release.
+orion-authoring = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+orion-common = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+orion-definitions = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+orion-engine = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+orion-plugin-host = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+orion-runtime = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+orion-storage = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+dataflow-rs = { version = "4.0.3", features = ["datetime", "budget"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "migrate", "macros", "chrono", "uuid", "json", "bigdecimal", "sqlite", "postgres", "mysql"] }
+similar = "3"
+
+[dev-dependencies]
+serde-saphyr = { version = "2", default-features = false, features = ["deserialize"] }
+tempfile = "3"
+uuid = { version = "1", features = ["v4"] }
+# `sql check` against real databases (the #[ignore]d half of sql_check_test,
+# run by the containers CI job). Same requirements as orion-server's.
+testcontainers = { version = "0.27.3", default-features = false, features = ["aws-lc-rs"] }
+testcontainers-modules = { version = "0.15", default-features = false, features = ["aws-lc-rs", "postgres", "mysql"] }
+# The `server` test binary: a node assembled in-process through the server's
+# own boot path (its library target is `orion`), driven over its router.
+orion-server = { git = "https://github.com/GoPlasmatic/Orion", tag = "v2.0.0-rc.1" }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "tracing", "matched-path", "multipart"] }
+tower = { version = "0.5", default-features = false, features = ["util"] }
+
+[profile.release]
+codegen-units = 1
+strip = true
+
+# cargo-dist uses this profile for release builds
+[profile.dist]
+inherits = "release"
+lto = "thin"

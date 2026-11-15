@@ -1,0 +1,33 @@
+# Weekly dependency updates, grouped so routine bumps arrive as one PR per
+# ecosystem; majors stay separate because they need review (MSRV, breaking
+# APIs). The orion-* git dependencies move only with a deliberate tag bump
+# (README, "Contributing").
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      cargo-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

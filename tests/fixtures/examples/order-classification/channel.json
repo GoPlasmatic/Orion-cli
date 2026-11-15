@@ -1,0 +1,10 @@
+{
+  "channel_id": "order-tiers",
+  "name": "order-tiers",
+  "tags": ["pkg:order-classification"],
+  "channel_type": "sync",
+  "protocol": "http",
+  "methods": ["POST"],
+  "route_pattern": "/order-tiers",
+  "workflow_id": "order-classification"
+}

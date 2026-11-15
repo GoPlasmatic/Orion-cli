@@ -1,0 +1,211 @@
+# The orion-cli image: ci-gate, then a native per-platform build pushed by
+# digest and merged into one multi-arch manifest.
+name: Docker Release (CLI)
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  # A `vX.Y.Z` tag is a CLI release (the same tag release.yml publishes the
+  # installers from).
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+  # Allow manual trigger with options
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (build but don't push)"
+        type: boolean
+        default: false
+      tag_override:
+        description: "Version tag override (e.g. 0.2.1)"
+        type: string
+        required: false
+
+env:
+  GHCR_IMAGE: ghcr.io/goplasmatic/orion-cli
+
+jobs:
+  # Releases must not outrun CI: the tagged commit needs a
+  # successful CI run before anything is built or pushed.
+  ci-gate:
+    name: CI Gate
+    uses: ./.github/workflows/ci-gate.yml
+    with:
+      skip: ${{ inputs.dry_run || false }}
+    permissions:
+      actions: read
+      contents: read
+
+  # Determine version once, share across jobs
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_release: ${{ steps.version.outputs.should_release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Determine version
+        id: version
+        env:
+          TAG_OVERRIDE: ${{ inputs.tag_override }}
+        run: |
+          RELEASE=1
+          if [ -n "${TAG_OVERRIDE}" ]; then
+            VERSION="${TAG_OVERRIDE}"
+            # The override rides the same `type=semver` metadata path as a
+            # tag — an unparseable value is dropped by metadata-action,
+            # leaving the merge job's `imagetools create` with zero -t flags
+            # after the per-arch digests already pushed.
+            if ! printf '%s' "${VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$'; then
+              echo "::error::tag_override '${VERSION}' is not a semver version — metadata-action would drop it and the merge job would fail with untagged images already pushed."
+              exit 1
+            fi
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="0.0.0-dev.${GITHUB_SHA::8}"
+            RELEASE=0
+          fi
+          SHOULD_RELEASE=1
+          # Refuse a version the binary does not report.
+          if [ "${RELEASE}" = "1" ]; then
+            CARGO_VERSION=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+            if [ "${VERSION}" != "${CARGO_VERSION}" ]; then
+              echo "::error::Release version says ${VERSION} but Cargo.toml is at ${CARGO_VERSION} — the image would be labelled with a version the binary does not report. Release from a ref whose version agrees."
+              exit 1
+            fi
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION} (release: ${SHOULD_RELEASE})"
+
+  # Build per-platform images natively in parallel
+  build:
+    name: Build (${{ matrix.platform }})
+    needs: [prepare, ci-gate]
+    if: ${{ needs.prepare.outputs.should_release == '1' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-22.04
+          - platform: linux/arm64
+            runner: ubuntu-22.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Login to GitHub Container Registry
+        if: ${{ !inputs.dry_run }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.GHCR_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.prepare.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.version }}
+            type=sha,prefix=
+          flavor: |
+            latest=auto
+
+      # Build and push by digest (no tag yet — tags are applied in the merge step)
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: ${{ matrix.platform }}
+          push: ${{ !inputs.dry_run }}
+          # .dockerignore excludes .git/, so the SHA must ride in as a
+          # build-arg or the published image reports git_hash=unknown.
+          build-args: |
+            GIT_HASH=${{ github.sha }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # The release scope; CI's no-push builds use `-ci` scopes.
+          cache-from: type=gha,scope=cli-${{ matrix.platform }}
+          cache-to: type=gha,scope=cli-${{ matrix.platform }},mode=max
+          outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=${{ !inputs.dry_run }}
+
+      - name: Export digest
+        if: ${{ !inputs.dry_run }}
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: ${{ !inputs.dry_run }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digests-${{ matrix.runner }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Merge platform images into a multi-arch manifest
+  merge:
+    name: Merge & Push Manifest
+    needs: [prepare, build]
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.GHCR_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.prepare.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.version }}
+            type=sha,prefix=
+          flavor: |
+            latest=auto
+
+      - name: Create and push multi-arch manifest
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.GHCR_IMAGE }}@sha256:%s ' *)
+
+      - name: Inspect manifest
+        run: |
+          docker buildx imagetools inspect "${{ env.GHCR_IMAGE }}:${{ needs.prepare.outputs.version }}"

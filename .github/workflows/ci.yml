@@ -1,0 +1,427 @@
+name: CI
+
+on:
+  push:
+    # Release branches are included so the tag-time `ci-gate` job can find a
+    # successful run at the tag SHA.
+    branches: [main, "release/**", "v[0-9]+.[0-9]+.[0-9]+"]
+  pull_request:
+  # Mints a fresh CI run for a SHA without pushing a new commit. ci-gate
+  # filters on event=push, so for the gate use "Re-run all jobs" on the push
+  # run instead.
+  workflow_dispatch:
+  schedule:
+    # Weekly full sweep (Sundays 05:23 UTC): `msrv` builds AND tests on 1.98
+    # here rather than only checking, and everything else runs again, which
+    # catches dependency drift no commit of ours would have triggered.
+    - cron: "23 5 * * 0"
+
+permissions:
+  contents: read
+
+# One group per PR: superseded pushes cancel the in-flight run. Branch pushes
+# group by commit, so every pushed SHA runs to completion and the
+# release-time ci-gate always finds a completed run.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Orion release this CLI is built against: the `tag` on every orion-*
+  # dependency in Cargo.toml. The e2e and examples jobs run against an
+  # orion-server, and Orion's examples, from the same tag. Bump the two
+  # together.
+  ORION_REPO: GoPlasmatic/Orion
+  ORION_TAG: v2.0.0-rc.1
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+        with:
+          toolchain: "1.100"
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+        with:
+          toolchain: "1.100"
+          components: clippy
+
+      # Restores the shared `linux-stable` entry written by `test`; never
+      # writes, so one cache serves every stable-Linux job.
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          shared-key: linux-stable
+          save-if: false
+
+      - name: Install system dependencies
+        uses: ./.github/actions/apt-build-deps
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+  # rust-version in Cargo.toml is a public promise; this job keeps it honest.
+  msrv:
+    name: MSRV (1.98)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+        with:
+          toolchain: "1.98"
+
+      # Its own entry, not `linux-stable`: a different rustc hashes every
+      # artifact differently, so there is nothing to share.
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install system dependencies
+        uses: ./.github/actions/apt-build-deps
+
+      # Per push only *checks* — `--all-targets` so dev-dependencies stay
+      # honest about the MSRV, `--locked` so a resolver bump that needs a
+      # newer rustc is caught. The weekly sweep runs the suite.
+      - name: Check on MSRV
+        if: github.event_name != 'schedule'
+        run: cargo check --all-targets --locked
+
+      - name: Test on MSRV (weekly sweep)
+        if: github.event_name == 'schedule'
+        run: cargo test --locked --no-fail-fast
+
+  test:
+    name: Test
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The suites over the whole of Orion's examples/packages read them from
+      # here (ORION_EXAMPLES_DIR); without it they skip.
+      - name: Check out Orion's examples at the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: ${{ env.ORION_REPO }}
+          ref: ${{ env.ORION_TAG }}
+          path: orion-src
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+        with:
+          toolchain: "1.100"
+
+      # The single writer of the `linux-stable` cache: `cargo test
+      # --all-targets` builds a superset of what the other stable jobs need.
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          shared-key: linux-stable
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Install system dependencies
+        uses: ./.github/actions/apt-build-deps
+
+      # --no-fail-fast: one failing binary must not hide the others' results.
+      # deployments_dir_e2e needs a server binary (ORION_BIN) and runs in the
+      # `e2e` job; here it reports itself skipped.
+      - name: Run tests
+        env:
+          ORION_EXAMPLES_DIR: ${{ github.workspace }}/orion-src/examples
+        run: cargo test --all-targets --locked --no-fail-fast
+
+  # The container-gated half of the `sql check` suite: real Postgres / MySQL.
+  containers:
+    name: Containers (cli-sql)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+        with:
+          toolchain: "1.100"
+
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          shared-key: linux-stable
+          save-if: false
+
+      - name: Install system dependencies
+        uses: ./.github/actions/apt-build-deps
+
+      - name: sql check against real databases
+        run: cargo test --locked --test authoring -- --ignored sql_check_test
+
+  # The orion-server the e2e and examples jobs drive, installed from the
+  # Orion tag this CLI is built against. A tag does not move, so the binary
+  # is cached by tag and toolchain and rebuilt only when either changes.
+  server:
+    name: orion-server (from the Orion tag)
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+        with:
+          toolchain: "1.100"
+
+      - name: Restore the cached server
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: server-bin
+          key: orion-server-${{ env.ORION_TAG }}-${{ runner.os }}-rust-1.100
+
+      - name: Install system dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/apt-build-deps
+
+      - name: Install orion-server from the tag
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: >-
+          cargo install --git "https://github.com/${ORION_REPO}" --tag "${ORION_TAG}"
+          orion-server --locked --root server-bin
+
+      - name: Upload the server binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: orion-server
+          path: server-bin/bin/orion-server
+          if-no-files-found: error
+          retention-days: 1
+
+  # The shell e2e suite (tests/e2e/): a real orion-server driven over HTTP
+  # with this repository's orion-cli — the one place the CLI's API contract
+  # with a server is exercised end to end — plus the cargo test that does
+  # the same for `compile` → `deployments apply -d`.
+  e2e:
+    name: E2E (orion-cli against orion-server)
+    needs: server
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out Orion's examples at the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: ${{ env.ORION_REPO }}
+          ref: ${{ env.ORION_TAG }}
+          path: orion-src
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+        with:
+          toolchain: "1.100"
+
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          shared-key: linux-stable
+          save-if: false
+
+      - name: Install system dependencies
+        uses: ./.github/actions/apt-build-deps
+
+      - name: Download the server binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: orion-server
+          path: server-bin
+
+      - name: Build orion-cli
+        run: |
+          chmod +x server-bin/orion-server
+          cargo build --locked --bin orion-cli
+
+      # jq and curl are preinstalled on the GitHub ubuntu images.
+      - name: Run the e2e suite
+        env:
+          ORION_BIN: ${{ github.workspace }}/server-bin/orion-server
+          ORION_EXAMPLES_DIR: ${{ github.workspace }}/orion-src/examples
+          E2E_SKIP_BUILD: "1"
+        run: ./tests/e2e/run.sh
+
+      - name: compile → deployments apply -d (cargo test)
+        env:
+          ORION_BIN: ${{ github.workspace }}/server-bin/orion-server
+        run: cargo test --locked --test deployments_dir_e2e
+
+  # Orion's runnable examples, proven with this CLI: every example workflow
+  # lints, the offline workflow tests pass, and every example package
+  # deploys end to end to a real server (twice — the second applies nothing).
+  examples:
+    name: Examples
+    needs: server
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check out Orion's examples at the tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          repository: ${{ env.ORION_REPO }}
+          ref: ${{ env.ORION_TAG }}
+          path: orion-src
+
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+        with:
+          toolchain: "1.100"
+
+      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+        with:
+          shared-key: linux-stable
+          save-if: false
+
+      - name: Install system dependencies
+        uses: ./.github/actions/apt-build-deps
+
+      - name: Download the server binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: orion-server
+          path: server-bin
+
+      - name: Build orion-cli
+        run: |
+          chmod +x server-bin/orion-server
+          cargo build --locked --bin orion-cli
+          echo "ORION_CLI=${GITHUB_WORKSPACE}/target/debug/orion-cli" >> "$GITHUB_ENV"
+
+      - name: Lint example workflows
+        working-directory: orion-src
+        run: |
+          # workflow*.json, not workflow.json: channel-composition ships a
+          # second workflow (workflow-lookup.json).
+          #
+          # --definitions: a workflow written in source form resolves its
+          # `$from`, `$use` and `$each` against the package's own shared
+          # document, which a per-file lint does not otherwise load.
+          for f in examples/packages/*/workflow*.json; do
+            "$ORION_CLI" lint "$f" --definitions "$(dirname "$f")"
+          done
+
+      # `--plugin-dir`: the fixed-width-statement and c4-referee cases run
+      # the examples' plugin components for real.
+      - name: Run example workflow tests (offline, stubbed connectors, real plugin)
+        working-directory: orion-src
+        run: >-
+          "$ORION_CLI" test examples/workflow-tests
+          --plugin-dir examples/packages/fixed-width-statement
+          --plugin-dir examples/packages/c4-referee
+
+      - name: Start Postgres (postgres-orders package)
+        working-directory: orion-src
+        run: docker compose -f examples/packages/postgres-orders/docker-compose.yml up --wait postgres
+
+      # Plugins on: the fixed-width-statement and c4-referee packages deploy
+      # one. ORDERS_DB_URL is the env:// reference postgres-orders'
+      # connection names; the node resolves it from its own environment.
+      - name: Start Orion
+        run: |
+          ORION_STORAGE__URL="sqlite:/tmp/orion-examples.db?mode=rwc" \
+          ORDERS_DB_URL="postgres://orion:orion@localhost:5432/orion_orders" \
+          ORION_PLUGINS__ENABLED=true \
+          ./server-bin/orion-server > /tmp/orion-examples.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8080/healthz > /dev/null 2>&1 && exit 0
+            sleep 1
+          done
+          echo "server did not become healthy" >&2
+          cat /tmp/orion-examples.log >&2
+          exit 1
+
+      - name: Quickstart script (twice — idempotency)
+        working-directory: orion-src
+        run: |
+          ./examples/quickstart.sh
+          ./examples/quickstart.sh
+
+      # Each deploy replaces the node's head with that one package, so every
+      # package is proven on its own; the second run applies nothing.
+      - name: Deploy every example package end-to-end (twice — idempotency)
+        working-directory: orion-src/examples
+        run: |
+          for d in packages/*/; do
+            [ -f "$d/workflow.json" ] || continue
+            ./deploy.sh "${d%/}"
+            ./deploy.sh "${d%/}"
+          done
+
+      - name: Server log on failure
+        if: failure()
+        run: cat /tmp/orion-examples.log || true
+
+  # The image build breaks independently of cargo (system deps, base-image
+  # drift); building it on every PR keeps that from surfacing mid-release.
+  # No push — docker-release-cli.yml owns publishing. Push and PR builds
+  # relax the dist profile's codegen settings (see the Dockerfile's ARGs);
+  # the weekly sweep builds the shipped shape.
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          build-args: |
+            GIT_HASH=${{ github.sha }}
+            CARGO_PROFILE_RELEASE_CODEGEN_UNITS=${{ github.event_name == 'schedule' && '1' || '16' }}
+          cache-from: type=gha,scope=cli-${{ github.event_name == 'schedule' && 'linux/amd64' || 'linux/amd64-ci' }}
+          cache-to: type=gha,scope=cli-${{ github.event_name == 'schedule' && 'linux/amd64' || 'linux/amd64-ci' }},mode=max

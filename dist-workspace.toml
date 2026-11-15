@@ -1,0 +1,47 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.31.0"
+# Allow customized CI files (e.g. Homebrew git user/email, GH_PAT secret)
+allow-dirty = ["ci"]
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "homebrew"]
+# Publish jobs to run in CI
+publish-jobs = ["homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax)
+# x86_64-apple-darwin (Intel Macs) was dropped 2026-08-01, before ever
+# shipping in a release: dist's default runner for it is macos-13, whose GitHub
+# runners queue near-indefinitely, and the Intel Mac audience is sunsetting
+# (Apple ended Intel support with macOS 26).
+# Revisit only on demand, via dist's github-custom-runners cross-compiling
+# from macos-latest rather than the macos-13 pool. Musl (static Linux) is
+# deliberately NOT here yet: cross-os-build.yml compiles
+# x86_64-unknown-linux-musl on every relevant PR — promote it into this list
+# once that job has a green history.
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc"]
+# Homebrew tap repository
+tap = "GoPlasmatic/homebrew-tap"
+# Attest dist artifacts with GitHub build provenance. The committed release.yml
+# carries the matching hand-edits (allow-dirty = ["ci"] means dist does not
+# regenerate it); keep this flag so a future regen preserves them.
+github-attestations = true
+
+# System build dependencies: cmake for aws-lc-sys (the rustls crypto
+# provider), which can build through it, and pkg-config for the -sys crates
+# that probe with it. GitHub's runner images preinstall both, so this list
+# matters exactly when a dist build runs in a container, where nothing is
+# preinstalled. Keep it in step with the Dockerfile's builder-stage apt line
+# and .github/actions/apt-build-deps.
+[dist.dependencies.apt]
+cmake = "*"
+pkg-config = "*"
+
+# macOS runners preinstall the whole toolchain; kept for a hypothetical
+# cmake-less runner image.
+[dist.dependencies.homebrew]
+cmake = "*"
