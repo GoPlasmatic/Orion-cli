@@ -9,8 +9,9 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use colored::Colorize;
 use orion_api::v2::{
-    ApplyDeploymentRequest, ConvergenceStatusResponse, CreateDeploymentPlanRequest,
-    CreateDeploymentRequest, DeploymentPlanResponse, RollbackDeploymentRequest,
+    ApplyDeploymentRequest, ChannelDriverInfo, ConvergenceStatusResponse,
+    CreateDeploymentPlanRequest, CreateDeploymentRequest, DeploymentPlanResponse,
+    ProviderBackendInfo, RollbackDeploymentRequest, RuntimeCapabilitiesResponse,
 };
 use orion_client::V2Admin;
 use tabled::Tabled;
@@ -18,6 +19,7 @@ use tabled::Tabled;
 use super::v2::load_request;
 use crate::client::OrionClient;
 use crate::output::{self, OutputFormat};
+use crate::utils;
 
 #[derive(Args)]
 #[command(
@@ -143,6 +145,198 @@ struct DeploymentRow {
     digest: String,
 }
 
+#[derive(Tabled)]
+struct DriverRow {
+    #[tabled(rename = "Protocol")]
+    protocol: String,
+    #[tabled(rename = "Sync")]
+    sync: String,
+    #[tabled(rename = "Async")]
+    r#async: String,
+    #[tabled(rename = "HTTP")]
+    http: String,
+    #[tabled(rename = "Kind")]
+    kind: String,
+    #[tabled(rename = "Guards")]
+    guards: String,
+    #[tabled(rename = "Schema")]
+    schema: String,
+}
+
+#[derive(Tabled)]
+struct ProviderRow {
+    #[tabled(rename = "Backend")]
+    driver_id: String,
+    #[tabled(rename = "Kind")]
+    kind: String,
+    #[tabled(rename = "Digest")]
+    digest: String,
+    #[tabled(rename = "Ops")]
+    operations: String,
+    #[tabled(rename = "Depends on")]
+    dependencies: String,
+}
+
+/// A human-readable capabilities view: the edition and what this node serves.
+/// The JSON and YAML forms stay the server's typed answer.
+fn print_capabilities(capabilities: &RuntimeCapabilitiesResponse) {
+    println!(
+        "{} {} · {} · {}",
+        "Orion".bold(),
+        capabilities.edition.to_string().bold(),
+        format!("v2 admin API {}", capabilities.api_version).dimmed(),
+        format!("admission policy {}", capabilities.admission_policy_id).dimmed()
+    );
+
+    let head = &capabilities.deployment_head;
+    let node = &capabilities.node_status;
+    println!(
+        "  Head:        revision {} (epoch {}) · this node serves {}",
+        head.revision, head.epoch, node.applied_revision
+    );
+    println!("  Node:        {} (boot {})", node.node_id, node.boot_id);
+    println!(
+        "  Reconciler:  desired revision {} · {}",
+        node.desired_revision,
+        if node.configuration_degraded {
+            "configuration degraded".red().bold().to_string()
+        } else {
+            "configuration ok".green().to_string()
+        }
+    );
+    if !node.retained_revisions.is_empty() {
+        println!(
+            "  Retained:    {}",
+            node.retained_revisions
+                .iter()
+                .map(u64::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    let scheduler = &capabilities.native_scheduler;
+    println!(
+        "  Scheduler:   {} in flight / {}",
+        scheduler.in_flight, scheduler.max_in_flight
+    );
+    if let Some(error) = &node.last_error {
+        println!("  Last error:  {error}");
+    }
+    for quarantined in &node.quarantined_entities {
+        println!(
+            "  Quarantined: {} {}@{} — {}",
+            quarantined.entity.kind,
+            quarantined.entity.id,
+            quarantined.entity.revision,
+            quarantined.reason
+        );
+    }
+
+    println!("\n{}", "Channel drivers".bold());
+    if capabilities.channel_driver_info.is_empty() {
+        println!(
+            "  {}",
+            if capabilities.channel_drivers.is_empty() {
+                "(none reported)".dimmed().to_string()
+            } else {
+                capabilities.channel_drivers.join(", ")
+            }
+        );
+    } else {
+        output::print_table(
+            capabilities
+                .channel_driver_info
+                .iter()
+                .map(driver_row)
+                .collect(),
+        );
+    }
+
+    println!("\n{}", "Provider backends".bold());
+    if capabilities.provider_backends.is_empty() {
+        println!("  {}", "(none reported)".dimmed());
+    } else {
+        output::print_table(
+            capabilities
+                .provider_backends
+                .iter()
+                .map(provider_row)
+                .collect(),
+        );
+    }
+}
+
+fn driver_row(driver: &ChannelDriverInfo) -> DriverRow {
+    let (kind, guards) = match (&driver.ingress_guards, &driver.http_hook) {
+        (Some(guards), _) => (
+            "ingress",
+            [
+                ("rate limit", guards.rate_limit),
+                ("validation", guards.validation),
+                ("deduplication", guards.deduplication),
+                ("backpressure", guards.backpressure),
+            ]
+            .into_iter()
+            .filter_map(|(name, on)| on.then_some(name))
+            .collect::<Vec<_>>()
+            .join(", "),
+        ),
+        (_, Some(guards)) => (
+            "http hook",
+            [
+                ("validation", guards.validation),
+                ("deduplication", guards.deduplication),
+                ("backpressure", guards.backpressure),
+            ]
+            .into_iter()
+            .filter_map(|(name, on)| on.then_some(name))
+            .collect::<Vec<_>>()
+            .join(", "),
+        ),
+        _ => ("core", "-".to_string()),
+    };
+    DriverRow {
+        protocol: driver.protocol.clone(),
+        sync: yes_no(driver.supports_sync),
+        r#async: yes_no(driver.supports_async),
+        http: yes_no(driver.registers_http_routes),
+        kind: kind.to_string(),
+        guards: if guards.is_empty() {
+            "-".to_string()
+        } else {
+            guards
+        },
+        schema: yes_no(driver.transport_schema.is_some()),
+    }
+}
+
+fn provider_row(provider: &ProviderBackendInfo) -> ProviderRow {
+    ProviderRow {
+        driver_id: provider.driver_id.clone(),
+        kind: provider.kind.to_string(),
+        digest: provider
+            .package_digest
+            .as_deref()
+            .map(|digest| utils::truncate(digest, 19))
+            .unwrap_or_else(|| "-".to_string()),
+        operations: provider
+            .operations
+            .as_ref()
+            .map(|operations| operations.len().to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        dependencies: provider
+            .dependencies
+            .as_ref()
+            .filter(|dependencies| !dependencies.is_empty())
+            .map(|dependencies| dependencies.keys().cloned().collect::<Vec<_>>().join(", "))
+            .unwrap_or_else(|| "-".to_string()),
+    }
+}
+
+fn yes_no(value: bool) -> String {
+    if value { "yes" } else { "-" }.to_string()
+}
+
 impl DeploymentsCmd {
     #[cfg(test)]
     pub(super) fn new(command: DeploymentsSubcommand) -> Self {
@@ -157,12 +351,16 @@ impl DeploymentsCmd {
     ) -> Result<i32> {
         match &self.command {
             DeploymentsSubcommand::Capabilities => {
-                let resp = client.runtime_capabilities().await?;
+                let resp = super::v2::capabilities(client).await?;
                 if quiet {
                     println!("{}", resp.edition);
                     return Ok(0);
                 }
-                output::print_value(format, &serde_json::to_value(&resp)?)?;
+                if matches!(format, OutputFormat::Json | OutputFormat::Yaml) {
+                    output::print_value(format, &serde_json::to_value(&resp)?)?;
+                    return Ok(0);
+                }
+                print_capabilities(&resp);
                 Ok(0)
             }
             DeploymentsSubcommand::Plan {

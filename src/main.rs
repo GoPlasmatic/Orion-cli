@@ -109,6 +109,16 @@ pub struct Cli {
     #[arg(long, global = true)]
     yes: bool,
 
+    /// Refuse a target node below this edition before running the command
+    #[arg(
+        long,
+        global = true,
+        value_name = "EDITION",
+        value_enum,
+        help_heading = "Connection"
+    )]
+    require_edition: Option<commands::v2::RequiredEdition>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -209,67 +219,73 @@ fn error_details(e: &anyhow::Error) -> &[orion_api::FieldError] {
 }
 
 async fn run(cli: Cli) -> anyhow::Result<i32> {
+    if cli.require_edition.is_some() && !cli.command.needs_server() {
+        eprintln!(
+            "{} --require-edition has no effect on an offline command",
+            "Warning:".yellow().bold()
+        );
+    }
     match &cli.command {
         Commands::Config(cmd) => {
             cmd.run().await?;
             Ok(0)
         }
         Commands::Health => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             commands::health::run(&client, &cli.output, cli.quiet).await
         }
         Commands::Send(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet, cli.verbose).await
         }
         Commands::Traces(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
         Commands::Engine(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
         Commands::Functions(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
         Commands::Metrics(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client).await
         }
         Commands::AuditLogs(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
         Commands::Backups(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet, cli.yes).await
         }
         Commands::Cache(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
         Commands::Dlq(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet, cli.yes).await
         }
         Commands::Cron(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
         Commands::Deployments(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             commands::v2::require_api_version(&client).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
         Commands::Provider(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             commands::v2::require_api_version(&client).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
         Commands::Connections(cmd) => {
-            let client = build_client(&cli)?;
+            let client = server_client(&cli).await?;
             commands::v2::require_api_version(&client).await?;
             cmd.run(&client, &cli.output, cli.quiet).await
         }
@@ -286,6 +302,17 @@ async fn run(cli: Cli) -> anyhow::Result<i32> {
         Commands::Sql(cmd) => cmd.run(&cli.output).await,
         Commands::Plugin(cmd) => cmd.run(),
     }
+}
+
+/// A client for a command that talks to a server, with `--require-edition`
+/// applied before the command runs. Building here rather than per command
+/// means one preflight, one credential warning, and one client.
+async fn server_client(cli: &Cli) -> anyhow::Result<OrionClient> {
+    let client = build_client(cli)?;
+    if let Some(required) = cli.require_edition {
+        commands::v2::require_edition(&client, required.tier()).await?;
+    }
+    Ok(client)
 }
 
 fn build_client(cli: &Cli) -> anyhow::Result<OrionClient> {

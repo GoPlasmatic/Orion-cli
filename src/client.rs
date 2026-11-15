@@ -247,6 +247,10 @@ fn error_hint(code: &str) -> &'static str {
             "\n  Hint: Check the definition against the field errors above. 'orion-cli lint <dir>' checks a definition set offline"
         }
         codes::CONFLICT => "\n  Hint: A resource with this ID or name may already exist",
+        codes::TIER_NOT_ENABLED => {
+            "\n  Hint: The node's edition does not serve this feature. Check \
+             'orion-cli deployments capabilities' and use --require-edition to fail early"
+        }
         _ => "",
     }
 }
@@ -289,5 +293,16 @@ fn compact_value(v: &Value) -> String {
             .collect::<Vec<_>>()
             .join("|"),
         other => other.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn an_edition_refusal_points_at_capabilities_and_the_preflight() {
+        let hint = super::error_hint(orion_api::codes::TIER_NOT_ENABLED);
+        assert!(hint.contains("edition"), "{hint}");
+        assert!(hint.contains("deployments capabilities"), "{hint}");
+        assert!(hint.contains("--require-edition"), "{hint}");
     }
 }

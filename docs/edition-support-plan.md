@@ -5,6 +5,17 @@
 **Scope:** `Orion-cli` support for the Community, Standard and Enterprise editions of Orion v2.  
 **Related repositories:** `../Orion` (Community, v2.0), `../Orion-ext` (Standard + Enterprise, v2.0), `../Orion/skills/orion` (agent skill).
 
+## Progress
+
+- [x] Phase 0 — rebase on the Orion v2.0 release commit
+- [x] Phase 1 — edition discovery and preflight
+- [ ] Phase 2 — authoring against an edition
+- [ ] Phase 3 — deployment manifest fidelity
+- [ ] Phase 4 — provider and connection UX
+- [ ] Phase 5 — edition channel protocols
+- [ ] Phase 6 — cluster operations
+- [ ] Phase 7 — CI, docs, skill and release
+
 ---
 
 ## 1. Goal

@@ -23,6 +23,27 @@ pub mod v2;
 
 use clap::Subcommand;
 
+impl Commands {
+    /// Whether this command reads a server. The offline authoring tools and
+    /// `config` never do, so `--require-edition` has nothing to check for
+    /// them and `main` says so instead of quietly ignoring it.
+    pub fn needs_server(&self) -> bool {
+        !matches!(
+            self,
+            Self::Config(_)
+                | Self::Completions(_)
+                | Self::Lint(_)
+                | Self::Compile(_)
+                | Self::DryRun(_)
+                | Self::Test(_)
+                | Self::Fmt(_)
+                | Self::Clippy(_)
+                | Self::Sql(_)
+                | Self::Plugin(_)
+        )
+    }
+}
+
 #[derive(Subcommand)]
 pub enum Commands {
     /// Manage CLI configuration (server URL, output format, API key)

@@ -92,7 +92,30 @@ what the previous revision deployed.
 --verbose           Show full response bodies and extra details
 --no-color          Disable colored output (env: NO_COLOR)
 --yes               Skip confirmation prompts
+--require-edition   Refuse a target below community|standard|enterprise
 ```
+
+---
+
+## Editions
+
+One binary serves Community, Standard and Enterprise. The edition is a
+property of the target node, read from
+`GET /api/v2/admin/runtime-capabilities`; the CLI never builds one edition's
+behaviour into the binary.
+
+```bash
+# What this node is, and what it serves: edition, admission policy, channel
+# drivers, provider backends, deployment head and reconciler status.
+orion-cli deployments capabilities
+
+# Fail before a write when the target is below the edition a change needs.
+orion-cli --require-edition enterprise deployments plan -d dist/deployment
+```
+
+`--require-edition` is checked once per server-facing command. An offline
+command (`lint`, `compile`, `fmt`, `clippy`, `dry-run`, `test`, `sql`,
+`plugin`) warns that it has no target to check.
 
 ---
 

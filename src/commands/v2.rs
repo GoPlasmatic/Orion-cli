@@ -5,9 +5,32 @@
 //! server.
 
 use anyhow::{Context, Result};
+use orion_api::v2::{EditionTier, RuntimeCapabilitiesResponse};
 use orion_client::V2Admin;
 
 use crate::client::OrionClient;
+
+/// The minimum edition a command may run against, from `--require-edition`.
+///
+/// A local enum rather than a clap parser on [`EditionTier`]: the wire type
+/// belongs to `orion-api`, and an edition ladder is the target's property,
+/// not a string this binary interprets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum RequiredEdition {
+    Community,
+    Standard,
+    Enterprise,
+}
+
+impl RequiredEdition {
+    pub fn tier(self) -> EditionTier {
+        match self {
+            Self::Community => EditionTier::Community,
+            Self::Standard => EditionTier::Standard,
+            Self::Enterprise => EditionTier::Enterprise,
+        }
+    }
+}
 
 fn load_file_or_stdin(file: &str) -> Result<serde_json::Value> {
     if file == "-" {
@@ -25,6 +48,32 @@ pub async fn require_api_version(client: &OrionClient) -> Result<()> {
         .await
         .context("reading the server's v2 admin API version")?;
     orion_client::check_api_version(server).map_err(anyhow::Error::from)
+}
+
+/// The target node's capabilities, after the contract revision has been
+/// checked. One helper so every reader of the answer checks the version
+/// first and names the same step when it fails.
+pub async fn capabilities(client: &OrionClient) -> Result<RuntimeCapabilitiesResponse> {
+    require_api_version(client).await?;
+    client
+        .runtime_capabilities()
+        .await
+        .context("reading the server's runtime capabilities")
+}
+
+/// Refuse a target node below `required` before a command writes anything.
+/// The server remains the authority; this only turns a known mismatch into a
+/// message that names both editions instead of a later, narrower refusal.
+pub async fn require_edition(client: &OrionClient, required: EditionTier) -> Result<()> {
+    let capabilities = capabilities(client).await?;
+    if capabilities.edition < required {
+        anyhow::bail!(
+            "this node reports edition '{}'; this operation requires '{}' or higher",
+            capabilities.edition,
+            required
+        );
+    }
+    Ok(())
 }
 
 /// `file` (or stdin for `-`) read as the request type `T`.
@@ -51,10 +100,13 @@ mod tests {
         Ok(serde_json::to_value(answer)?)
     }
 
-    fn capabilities(backends: Vec<ProviderBackendInfo>) -> RuntimeCapabilitiesResponse {
+    fn capabilities(
+        edition: EditionTier,
+        backends: Vec<ProviderBackendInfo>,
+    ) -> RuntimeCapabilitiesResponse {
         RuntimeCapabilitiesResponse {
             api_version: API_VERSION,
-            edition: EditionTier::Community,
+            edition,
             admission_policy_id: "community".into(),
             channel_drivers: vec!["rest".into()],
             channel_driver_info: vec![],
@@ -155,7 +207,9 @@ mod tests {
     fn handle_v2_request(method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
         let body_val = body.cloned().unwrap_or_else(|| json!({}));
         match (method, path) {
-            ("GET", "/api/v2/admin/runtime-capabilities") => to_value(capabilities(vec![])),
+            ("GET", "/api/v2/admin/runtime-capabilities") => {
+                to_value(capabilities(EditionTier::Community, vec![]))
+            }
             ("POST", "/api/v2/admin/authoring/scaffold") => {
                 let req: ScaffoldRequest = serde_json::from_value(body_val)?;
                 assert_eq!(req.kind, ImplementationKind::Rust);
@@ -273,6 +327,43 @@ mod tests {
             let err = require_api_version(&client).await.unwrap_err().to_string();
             assert!(err.contains("this client speaks version 1"), "{err}");
         }
+    }
+
+    /// `--require-edition` is a preflight: a lower target is refused with
+    /// both editions named, before the command can write anything.
+    #[tokio::test]
+    async fn a_required_edition_refuses_a_lower_target() {
+        let client = OrionClient::with_mock_transport(|method, path, _| {
+            assert_eq!(method, "GET");
+            assert_eq!(path, "/api/v2/admin/runtime-capabilities");
+            Ok(serde_json::to_value(capabilities(
+                EditionTier::Community,
+                vec![],
+            ))?)
+        })
+        .unwrap();
+
+        require_edition(&client, EditionTier::Community)
+            .await
+            .unwrap();
+        for required in [EditionTier::Standard, EditionTier::Enterprise] {
+            let error = require_edition(&client, required).await.unwrap_err();
+            let message = error.to_string();
+            assert!(
+                message.contains("community") && message.contains(required.as_str()),
+                "{message}"
+            );
+        }
+    }
+
+    /// The ladder the flag is matched against: community < standard <
+    /// enterprise, as `orion-api` declares it.
+    #[test]
+    fn the_required_edition_maps_onto_the_wire_ladder() {
+        assert_eq!(RequiredEdition::Community.tier(), EditionTier::Community);
+        assert_eq!(RequiredEdition::Standard.tier(), EditionTier::Standard);
+        assert_eq!(RequiredEdition::Enterprise.tier(), EditionTier::Enterprise);
+        assert!(RequiredEdition::Enterprise.tier() > RequiredEdition::Community.tier());
     }
 
     #[tokio::test]
@@ -524,15 +615,16 @@ mod tests {
                         advisories: vec![],
                     })
                 }
-                ("GET", "/api/v2/admin/runtime-capabilities") => {
-                    to_value(capabilities(vec![ProviderBackendInfo {
+                ("GET", "/api/v2/admin/runtime-capabilities") => to_value(capabilities(
+                    EditionTier::Community,
+                    vec![ProviderBackendInfo {
                         kind: ImplementationKind::Rust,
                         driver_id: "org.orion.sqlite".into(),
                         package_digest: Some("sha256:p".into()),
                         operations: None,
                         dependencies: None,
-                    }]))
-                }
+                    }],
+                )),
                 ("GET", "/api/v2/admin/connections?limit=1000") => {
                     to_value(orion_api::Page::complete(vec![
                         ConnectionRevisionResponse {
