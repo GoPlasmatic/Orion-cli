@@ -5,7 +5,7 @@
 
   **The command-line interface for [Orion](https://github.com/GoPlasmatic/Orion) — deploy services, send data, and inspect traces, schedules and health from your terminal.**
 
-  Deploy a compiled definition set as an immutable revision. Send data through channels. Monitor engine health and metrics. Pair it with the [Orion agent skill](https://github.com/GoPlasmatic/Orion/tree/main/skills/orion) to let an AI assistant drive the same commands.
+  Deploy a compiled definition set as an immutable revision. Send data through channels. Monitor engine health and metrics. Pair it with the [Orion agent skill](https://github.com/GoPlasmatic/Orion-skills/tree/main/orion) to let an AI assistant drive the same commands.
 
   [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
   [![Rust](https://img.shields.io/badge/rust-1.98+-orange.svg)](https://www.rust-lang.org)
@@ -338,13 +338,13 @@ orion-cli --output json functions list
 
 ## AI Assistants
 
-Install the [Orion agent skill](https://github.com/GoPlasmatic/Orion/tree/main/skills/orion) and an AI coding agent can
+Install the [Orion agent skill](https://github.com/GoPlasmatic/Orion-skills/tree/main/orion) and an AI coding agent can
 drive every command below — authoring workflow JSON, dry-running it, and
 compiling and deploying it on its own.
 
 ```bash
-# from a clone of https://github.com/GoPlasmatic/Orion
-mkdir -p .claude/skills && cp -r skills/orion .claude/skills/
+# from a clone of https://github.com/GoPlasmatic/Orion-skills
+mkdir -p .claude/skills && cp -r orion .claude/skills/
 ```
 
 The skill is knowledge, not a service: the agent acts through this CLI under
