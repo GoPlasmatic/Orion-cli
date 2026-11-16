@@ -8,8 +8,8 @@
   Deploy a compiled definition set as an immutable revision. Send data through channels. Monitor engine health and metrics. Pair it with the [Orion agent skill](https://github.com/GoPlasmatic/Orion-skills/tree/main/orion) to let an AI assistant drive the same commands.
 
   [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-  [![Rust](https://img.shields.io/badge/rust-1.98+-orange.svg)](https://www.rust-lang.org)
-  [![GitHub Release](https://img.shields.io/github/v/release/codetiger/Orion-cli)](https://github.com/codetiger/Orion-cli/releases)
+  [![Rust](https://img.shields.io/badge/rust-1.100+-orange.svg)](https://www.rust-lang.org)
+  [![GitHub Release](https://img.shields.io/github/v/release/GoPlasmatic/Orion-cli)](https://github.com/GoPlasmatic/Orion-cli/releases)
 </div>
 
 ---
@@ -431,13 +431,13 @@ brew install GoPlasmatic/tap/orion-cli
 
 # macOS / Linux / Windows installers: shell and PowerShell one-liners are
 # attached to each release:
-# https://github.com/codetiger/Orion-cli/releases
+# https://github.com/GoPlasmatic/Orion-cli/releases
 
 # From source
-cargo install --git https://github.com/codetiger/Orion-cli orion-cli --locked
+cargo install --git https://github.com/GoPlasmatic/Orion-cli orion-cli --locked
 ```
 
-Verify with `orion-cli --version`. Requires Rust 1.98+ for source builds.
+Verify with `orion-cli --version`. Requires Rust 1.100+ for source builds.
 
 ---
 
@@ -452,23 +452,22 @@ Verify with `orion-cli --version`. Requires Rust 1.98+ for source builds.
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or submit a pull request on [GitHub](https://github.com/codetiger/Orion-cli).
+Contributions are welcome! Please open an issue or submit a pull request on [GitHub](https://github.com/GoPlasmatic/Orion-cli).
 
 The CLI is built from the Orion Community crates (`orion-api`, `orion-client`,
 `orion-authoring`, `orion-engine`, …), declared in `Cargo.toml` as git
 dependencies on one Orion release commit:
 
 ```toml
-orion-api = { git = "https://github.com/GoPlasmatic/Orion", rev = "15c632a099a989ca48e8a3d16ba2beb7901d2a29" }
+orion-api = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
 ```
 
-The v2.0 release has no tag yet, so the pin is the release commit Orion Ext
-is cut from. Bump that rev on every orion-* line together (the `server` test
-binary's `orion-server` dev-dependency included), set `ORION_REV` in
-`.github/workflows/ci.yml` to the same commit, and run `cargo update` so
-`Cargo.lock` follows. The commit must be reachable on GitHub before a clean
-clone (or CI) can build; move the whole pin to the `v2.0.0` tag when it
-exists.
+The pin is the Orion 2.0.0 release commit, the one the `v2.0.0` tag names;
+Orion Ext pins the same commit. Bump that rev on every orion-* line together
+(the `server` test binary's `orion-server` dev-dependency included), set
+`ORION_REV` in `.github/workflows/ci.yml` to the same commit, and run
+`cargo update` so `Cargo.lock` follows. The commit must be reachable on GitHub
+before a clean clone (or CI) can build.
 
 ```bash
 cargo build                                  # Build
@@ -521,7 +520,7 @@ Two things to know:
   [its README](tests/e2e/README.md):
 
 ```bash
-cargo install --git https://github.com/GoPlasmatic/Orion --rev 15c632a099a989ca48e8a3d16ba2beb7901d2a29 orion-server --locked
+cargo install --git https://github.com/GoPlasmatic/Orion --rev 1e58099f0b032c60b64f5b6d6e2af4c330dde0d1 orion-server --locked
 ORION_EXAMPLES_DIR=/path/to/Orion/examples ./tests/e2e/run.sh
 ```
 
@@ -531,4 +530,4 @@ Apache-2.0 — see [LICENSE](LICENSE) for details.
 
 ---
 
-If Orion CLI is useful to you, a ⭐ on [GitHub](https://github.com/codetiger/Orion-cli) helps other developers find it.
+If Orion CLI is useful to you, a ⭐ on [GitHub](https://github.com/GoPlasmatic/Orion-cli) helps other developers find it.

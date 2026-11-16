@@ -7,7 +7,7 @@
 # Digest-pinned to the same base images as the Orion CLI image always used so
 # a rebuild months from now resolves the same layers; dependabot bumps the
 # tag+digest.
-FROM rust:1.98-slim@sha256:bce1476d4be4d78b83705bc5f428b86d640eeeea33e9dadafbc037b5703a53bf AS chef
+FROM rust:1.100-slim@sha256:e9d95b74296f7126a83ae3d041aeaba1ff4c478f13abc5cc034fcf7c131c3d4a AS chef
 # git: cargo fetches the orion-* git dependencies with the git CLI. cmake,
 # g++ and pkg-config for the -sys crates (aws-lc-sys, the rustls crypto
 # provider, among them) — the server image's builder line, plus git. Keep in
@@ -55,7 +55,7 @@ FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee
 
 LABEL org.opencontainers.image.title="Orion CLI" \
       org.opencontainers.image.description="Command-line interface for the Orion declarative services runtime" \
-      org.opencontainers.image.source="https://github.com/codetiger/Orion-cli" \
+      org.opencontainers.image.source="https://github.com/GoPlasmatic/Orion-cli" \
       org.opencontainers.image.vendor="Plasmatic" \
       org.opencontainers.image.licenses="Apache-2.0"
 

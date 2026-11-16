@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-16
+
+The first release from this repository; 1.x shipped from GoPlasmatic/Orion.
+
 ### Added
 
 - **Canary rollout, compiled or hand-written.** `compile -d` can produce a
@@ -54,9 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Build against the Orion v2.0 release commit `15c632a0` (the commit Orion Ext
-  is cut from) on every `orion-*` dependency and in CI's `ORION_REV`. The pin
-  moves to the `v2.0.0` tag when that tag exists.
+- Build against Orion 2.0.0 (release commit `1e58099f`) on every
+  `orion-*` dependency and in CI's `ORION_REV`.
+- Requires Rust 1.100 (MSRV), the toolchain CI and the release builds pin.
+- Dependencies refreshed to their latest releases.
 - Use the v2 deployment API with a compatible server. `compile` writes a
   revision-free deployment directory; `deployments plan|apply -d` uploads its
   definitions, assigns or reuses member revisions, and replaces the complete
@@ -67,15 +72,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Offline authoring, dry-run and workflow tests use dataflow-rs 4.0.3 and strict
   definitions. Retired v3 spellings fail with replacement hints. The workflow
   trace shape is `{initial, steps, truncated}`.
-
 - YAML output uses `serde-saphyr` 2 instead of the archived `serde_yaml` and
   `unsafe-libyaml` crates. YAML formatting and quoting follow the new serializer.
 
 ## [1.12.0] - 2026-10-01
 
+Released with Orion 1.12.0; no CLI-specific changes.
+
 ## [1.11.1] - 2026-09-27
 
+Released with Orion 1.11.1; no CLI-specific changes.
+
 ## [1.11.0] - 2026-09-27
+
+Released with Orion 1.11.0; no CLI-specific changes.
 
 ## [1.10.0] - 2026-09-25
 
@@ -474,7 +484,8 @@ Initial release.
 [#271]: https://github.com/GoPlasmatic/Orion/issues/271
 [#282]: https://github.com/GoPlasmatic/Orion/issues/282
 
-[Unreleased]: https://github.com/GoPlasmatic/Orion/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/GoPlasmatic/Orion-cli/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/GoPlasmatic/Orion-cli/releases/tag/v2.0.0
 [1.12.0]: https://github.com/GoPlasmatic/Orion/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/GoPlasmatic/Orion/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/GoPlasmatic/Orion/compare/v1.10.0...v1.11.0

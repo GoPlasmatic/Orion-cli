@@ -1,0 +1,13 @@
+# Local development only (gitignored): build against an Orion working tree
+# instead of the git tag Cargo.toml names. See README "Contributing".
+[patch."https://github.com/GoPlasmatic/Orion"]
+orion-api = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-api" }
+orion-authoring = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-authoring" }
+orion-client = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-client" }
+orion-common = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-common" }
+orion-definitions = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-definitions" }
+orion-engine = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-engine" }
+orion-plugin-host = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-plugin-host" }
+orion-runtime = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-runtime" }
+orion-storage = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-storage" }
+orion-server = { path = "/Users/codetiger/Development/Plasmatic/Orion-Projects/Orion/crates/orion-server" }

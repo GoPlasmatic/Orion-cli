@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 
 ## Project Overview
 
-Orion CLI is a Rust CLI for the Orion services runtime ([GoPlasmatic/Orion](https://github.com/GoPlasmatic/Orion)). It is its own repository because the Community and Enterprise editions share it; it is built from the Orion Community crates, declared in `Cargo.toml` as git dependencies on one Orion release commit (`{ git = "https://github.com/GoPlasmatic/Orion", rev = "…" }`) — every orion-* line, the `orion-server` dev-dependency included, names the same rev, and `ORION_REV` in `.github/workflows/ci.yml` matches it. The v2.0 release has no tag yet, so the rev is the release commit Orion Ext is cut from; move the pin to the `v2.0.0` tag when it exists. To build against a local Orion checkout, a gitignored `.cargo/config.toml` `[patch."https://github.com/GoPlasmatic/Orion"]` maps each crate to a path (README, *Contributing*); never commit the `Cargo.lock` that patch produces. It carries the offline authoring tools (lint, compile, fmt, clippy, dry-run, test, sql check, plugin signing), deploys compiled definition sets as v2 deployments, sends data, and reads engine status, health, traces, schedules and the operational ledgers via HTTP against an Orion server. Definitions reach a node only through a deployment; the v1 entity commands (`workflows`, `channels`, `connectors`, `plugins`, `packages`) and `benchmark` are gone.
+Orion CLI is a Rust CLI for the Orion services runtime ([GoPlasmatic/Orion](https://github.com/GoPlasmatic/Orion)). It is its own repository because the Community and Enterprise editions share it; it is built from the Orion Community crates, declared in `Cargo.toml` as git dependencies on one Orion release commit (`{ git = "https://github.com/GoPlasmatic/Orion", rev = "…" }`) — every orion-* line, the `orion-server` dev-dependency included, names the same rev, and `ORION_REV` in `.github/workflows/ci.yml` matches it. The rev is the Orion 2.0.0 release commit (the one the `v2.0.0` tag names, and the one Orion Ext pins); a later move may name a rev or a tag. To build against a local Orion checkout, a gitignored `.cargo/config.toml` `[patch."https://github.com/GoPlasmatic/Orion"]` maps each crate to a path (README, *Contributing*); never commit the `Cargo.lock` that patch produces. It carries the offline authoring tools (lint, compile, fmt, clippy, dry-run, test, sql check, plugin signing), deploys compiled definition sets as v2 deployments, sends data, and reads engine status, health, traces, schedules and the operational ledgers via HTTP against an Orion server. Definitions reach a node only through a deployment; the v1 entity commands (`workflows`, `channels`, `connectors`, `plugins`, `packages`) and `benchmark` are gone.
 
 AI assistants drive this CLI through the **agent skill** at `orion/` in the [Orion-skills](https://github.com/GoPlasmatic/Orion-skills) repository, not through a tool server. `orion-cli mcp serve` and the whole `src/mcp/` tree were removed in 1.2.0: the HTTP transport exposed the full admin API on a port with no authentication of its own, and all 58 tools were hand-written mirrors of `commands::`. Do not reintroduce one — extend the skill instead, and keep anything discoverable at runtime (`functions list`, `--help`) out of it.
 
@@ -44,7 +44,7 @@ ORION_EXAMPLES_DIR=/path/to/Orion/examples ./tests/e2e/run.sh
 
 ## Architecture
 
-**Rust 1.98+ (MSRV), edition 2024, async with Tokio.**
+**Rust 1.100+ (MSRV), edition 2024, async with Tokio.**
 
 ### Module Layout
 
@@ -96,7 +96,7 @@ Core: `clap` (derive) for CLI, `tokio` for async, `serde`/`serde_json`/`serde_ya
 
 Workflows in `.github/workflows/`:
 
-- **CI** (`ci.yml`): fmt, clippy `-D warnings`, test (toolchain 1.100), MSRV `cargo check` on 1.98 (full test weekly), the container-gated `sql check` tests, an `orion-server` installed from the Orion rev (`ORION_REV`, cached per rev) feeding the `e2e` job (`tests/e2e` + `deployments_dir_e2e`) and the `examples` job (Orion's `examples/` linted, tested offline and deployed with this CLI), and a no-push Docker build
+- **CI** (`ci.yml`): fmt, clippy `-D warnings`, test (toolchain 1.100), MSRV `cargo check` on 1.100 (full test weekly), the container-gated `sql check` tests, an `orion-server` installed from the Orion rev (`ORION_REV`, cached per rev) feeding the `e2e` job (`tests/e2e` + `deployments_dir_e2e`) and the `examples` job (Orion's `examples/` linted, tested offline and deployed with this CLI), and a no-push Docker build
 - **Release** (`release.yml` + `dist-workspace.toml`): a `vX.Y.Z` tag drives cargo-dist v0.31.0 cross-platform builds (macOS ARM, Linux x86_64/ARM, Windows) with shell/powershell/homebrew installers, gated on a green CI run (`ci-gate.yml`); the build toolchain is pinned to 1.100
 - **Docker** (`docker-release-cli.yml`): the same tag builds the ghcr.io/goplasmatic/orion-cli image from the standalone `Dockerfile`
 - **Homebrew tap:** GoPlasmatic/homebrew-tap

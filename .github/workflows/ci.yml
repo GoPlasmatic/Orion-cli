@@ -11,7 +11,7 @@ on:
   # run instead.
   workflow_dispatch:
   schedule:
-    # Weekly full sweep (Sundays 05:23 UTC): `msrv` builds AND tests on 1.98
+    # Weekly full sweep (Sundays 05:23 UTC): `msrv` builds AND tests on 1.100
     # here rather than only checking, and everything else runs again, which
     # catches dependency drift no commit of ours would have triggered.
     - cron: "23 5 * * 0"
@@ -33,7 +33,7 @@ env:
   # orion-server, and Orion's examples, from the same commit. Bump the two
   # together; move to a tag when v2.0.0 exists.
   ORION_REPO: GoPlasmatic/Orion
-  ORION_REV: 15c632a099a989ca48e8a3d16ba2beb7901d2a29
+  ORION_REV: 1e58099f0b032c60b64f5b6d6e2af4c330dde0d1
 
 jobs:
   fmt:
@@ -46,7 +46,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master (toolchain from `with`)
         with:
           toolchain: "1.100"
           components: rustfmt
@@ -64,14 +64,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master (toolchain from `with`)
         with:
           toolchain: "1.100"
           components: clippy
 
       # Restores the shared `linux-stable` entry written by `test`; never
       # writes, so one cache serves every stable-Linux job.
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: linux-stable
           save-if: false
@@ -84,7 +84,7 @@ jobs:
 
   # rust-version in Cargo.toml is a public promise; this job keeps it honest.
   msrv:
-    name: MSRV (1.98)
+    name: MSRV (1.100)
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -93,13 +93,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master (toolchain from `with`)
         with:
-          toolchain: "1.98"
+          toolchain: "1.100"
 
       # Its own entry, not `linux-stable`: a different rustc hashes every
       # artifact differently, so there is nothing to share.
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
@@ -137,13 +137,13 @@ jobs:
           ref: ${{ env.ORION_REV }}
           path: orion-src
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master (toolchain from `with`)
         with:
           toolchain: "1.100"
 
       # The single writer of the `linux-stable` cache: `cargo test
       # --all-targets` builds a superset of what the other stable jobs need.
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: linux-stable
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -170,11 +170,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master (toolchain from `with`)
         with:
           toolchain: "1.100"
 
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: linux-stable
           save-if: false
@@ -198,7 +198,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master (toolchain from `with`)
         with:
           toolchain: "1.100"
 
@@ -220,7 +220,7 @@ jobs:
           orion-server --locked --root server-bin
 
       - name: Upload the server binary
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: orion-server
           path: server-bin/bin/orion-server
@@ -250,11 +250,11 @@ jobs:
           ref: ${{ env.ORION_REV }}
           path: orion-src
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master (toolchain from `with`)
         with:
           toolchain: "1.100"
 
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: linux-stable
           save-if: false
@@ -263,7 +263,7 @@ jobs:
         uses: ./.github/actions/apt-build-deps
 
       - name: Download the server binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: orion-server
           path: server-bin
@@ -308,11 +308,11 @@ jobs:
           ref: ${{ env.ORION_REV }}
           path: orion-src
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master (toolchain from `with`)
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master (toolchain from `with`)
         with:
           toolchain: "1.100"
 
-      - uses: Swatinem/rust-cache@f0d9c3887740aee45f6153b24b3a6b815192ec16 # v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: linux-stable
           save-if: false
@@ -321,7 +321,7 @@ jobs:
         uses: ./.github/actions/apt-build-deps
 
       - name: Download the server binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: orion-server
           path: server-bin
