@@ -2,3 +2,5 @@
 /target-*/
 # Local [patch] onto an Orion working tree — see README "Contributing".
 /.cargo/config.toml
+/.cargo/config.toml.*
+!/.cargo/config.toml.example
