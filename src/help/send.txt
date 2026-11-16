@@ -15,10 +15,17 @@ together.
 Edition protocols:
   graphql   POST a JSON GraphQL document with --raw:
             orion-cli send gql -d '{"query": "{ orders { id } }"}' --raw
-  sse       timer-fed; consume the stream with:
-            curl -N <server>/api/v2/data/<channel>
+            or send the document itself:
+            orion-cli send gql -f query.graphql --content-type application/graphql
+  sse       timer-fed; follow the stream with:
+            orion-cli streams tail <channel>
   kafka     ingress-fed; it has no HTTP route. Send through the broker, or
             check 'orion-cli deployments capabilities' for what the node serves.
+
+Per-request headers and a non-JSON body:
+  --header 'name: value'   Repeatable; applied to this request only.
+  --content-type <type>    Send -f/--stdin bytes verbatim. A JSON type keeps
+                           the envelope path; application/graphql sends text.
 
 Exit codes with --wait:
   0 = trace completed, 1 = trace failed, 3 = timed out

@@ -27,7 +27,7 @@ fn applied() -> Value {
 fn server(pending_reports: Option<usize>) -> http::Server {
     let mut polls = 0;
     http::Server::new(move |method, path, body| match (method, path) {
-        ("GET", "/api/v2/admin/runtime-capabilities") => (200, json!({"api_version": 1})),
+        ("GET", "/api/v2/admin/runtime-capabilities") => (200, json!({"api_version": 2})),
         ("POST", "/api/v2/admin/deployments") => {
             assert_eq!(body.unwrap()["base_revision"], 6);
             (202, applied())

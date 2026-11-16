@@ -238,6 +238,10 @@ async fn run(cli: Cli) -> anyhow::Result<i32> {
             let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet, cli.verbose).await
         }
+        Commands::Streams(cmd) => {
+            let client = server_client(&cli).await?;
+            cmd.run(&client).await
+        }
         Commands::Traces(cmd) => {
             let client = server_client(&cli).await?;
             cmd.run(&client, &cli.output, cli.quiet).await

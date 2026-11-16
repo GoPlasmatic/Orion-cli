@@ -12,7 +12,7 @@ use orion_api::v2::{
 use orion_client::V2Admin;
 use tabled::Tabled;
 
-use super::v2::load_request;
+use super::v2::{RequiredEdition, load_request};
 use crate::client::OrionClient;
 use crate::output::{self, OutputFormat};
 
@@ -87,6 +87,10 @@ pub enum ProviderSubcommand {
         /// capabilities` lists the registered backends.
         #[arg(long, default_value = "rust")]
         kind: ImplementationKind,
+        /// Edition tier to declare in `distribution.json` (`community`,
+        /// `standard` or `enterprise`). Omit for today's `community` default.
+        #[arg(long)]
+        tier: Option<RequiredEdition>,
     },
     /// Lint a provider package manifest and schema bundle
     Lint {
@@ -310,6 +314,7 @@ impl ProviderCmd {
                 provider_id,
                 version,
                 kind,
+                tier,
             } => {
                 let resp = client
                     .authoring_scaffold(&ScaffoldRequest {
@@ -317,6 +322,7 @@ impl ProviderCmd {
                         provider_id: provider_id.clone(),
                         version: version.clone(),
                         kind: *kind,
+                        tier: (*tier).map(RequiredEdition::tier),
                     })
                     .await?;
                 output::print_value(format, &serde_json::to_value(&resp)?)?;

@@ -1,4 +1,6 @@
-use anyhow::Result;
+use std::io::Read;
+
+use anyhow::{Result, bail};
 use clap::Args;
 use colored::Colorize;
 use serde_json::Value;
@@ -6,7 +8,7 @@ use serde_json::Value;
 use crate::client::OrionClient;
 use crate::output::{self, OutputFormat};
 use crate::utils;
-use orion_client::paths;
+use orion_client::{Bytes, RequestOptions, paths};
 
 #[derive(Args)]
 #[command(
@@ -59,6 +61,15 @@ pub struct SendCmd {
     #[arg(long, conflicts_with = "metadata")]
     raw: bool,
 
+    /// Extra request header, repeatable (`--header 'x-trace: 1'`).
+    #[arg(long = "header", value_name = "NAME: VALUE")]
+    header: Vec<String>,
+
+    /// Send the input verbatim with this content type instead of JSON, for a
+    /// GraphQL or other text channel (`--content-type application/graphql`).
+    #[arg(long, value_name = "TYPE")]
+    content_type: Option<String>,
+
     /// Request server-side execution profiling (sync only; requires the server's
     /// tracing.debug_profile_enabled flag). Adds an _orion.profile breakdown.
     #[arg(long)]
@@ -89,6 +100,50 @@ impl SendCmd {
         Ok(body)
     }
 
+    /// Whether the body is text this command sends verbatim rather than a
+    /// JSON value it builds. `application/json` and `+json` stay on the JSON
+    /// path; everything else sends `-f`/`--stdin` bytes as they are.
+    fn sends_text(&self) -> bool {
+        self.content_type.as_deref().is_some_and(|content_type| {
+            let essence = content_type
+                .split(';')
+                .next()
+                .unwrap_or(content_type)
+                .trim()
+                .to_ascii_lowercase();
+            essence != "application/json" && !essence.ends_with("+json")
+        })
+    }
+
+    /// The per-request options this command names.
+    fn request_options(&self) -> Result<RequestOptions> {
+        let mut options = RequestOptions::new();
+        if let Some(content_type) = &self.content_type {
+            options = options.with_content_type(content_type.clone());
+        }
+        for header in &self.header {
+            let (name, value) = super::streams::parse_header(header)?;
+            options = options.with_header(name, value);
+        }
+        Ok(options)
+    }
+    /// The input bytes for a text request. JSON input still goes through
+    /// [`utils::read_json_input`].
+    fn read_text_body(&self) -> Result<Bytes> {
+        if let Some(path) = &self.file {
+            return Ok(Bytes::from(std::fs::read(path)?));
+        }
+        if let Some(data) = &self.data {
+            return Ok(Bytes::from(data.clone()));
+        }
+        if self.stdin {
+            let mut buf = Vec::new();
+            std::io::stdin().read_to_end(&mut buf)?;
+            return Ok(Bytes::from(buf));
+        }
+        bail!("Provide input with -f <file>, -d '<data>', or --stdin")
+    }
+
     pub async fn run(
         &self,
         client: &OrionClient,
@@ -96,8 +151,18 @@ impl SendCmd {
         quiet: bool,
         verbose: bool,
     ) -> Result<i32> {
-        let payload =
-            utils::read_json_input(self.file.as_deref(), self.data.as_deref(), self.stdin)?;
+        if self.async_mode && self.sends_text() {
+            bail!(
+                "--content-type {} sends the body verbatim, and only a synchronous request \
+                 reads its answer; drop --async-mode",
+                self.content_type.as_deref().unwrap_or_default()
+            );
+        }
+        let payload = if self.sends_text() {
+            Value::Null
+        } else {
+            utils::read_json_input(self.file.as_deref(), self.data.as_deref(), self.stdin)?
+        };
 
         if self.async_mode {
             if self.profile && !quiet {
@@ -123,14 +188,55 @@ impl SendCmd {
         channel: &str,
         payload: &Value,
     ) -> Result<i32> {
-        let body = self.build_body(payload)?;
-
+        if self.sends_text() && self.metadata.is_some() {
+            bail!("--metadata needs a JSON body; drop it with --content-type");
+        }
         let path = if self.profile {
             format!("{}?profile=1", paths::data(channel))
         } else {
             paths::data(channel)
         };
-        let resp: Value = client.post(&path, &body).await?;
+        let options = self.request_options()?;
+        let answer = if self.sends_text() {
+            client
+                .post_bytes_with(&path, self.read_text_body()?, &options)
+                .await?
+        } else {
+            let body = serde_json::to_vec(&self.build_body(payload)?)?;
+            client
+                .post_bytes_with(&path, Bytes::from(body), &options)
+                .await?
+        };
+        // A GraphQL or other text channel may answer with something that is
+        // not JSON. Print it as it came rather than fail to decode it.
+        let resp: Value = match serde_json::from_slice(&answer) {
+            Ok(resp) => resp,
+            Err(_) => {
+                let text = String::from_utf8_lossy(&answer);
+                if matches!(format, OutputFormat::Json | OutputFormat::Yaml) {
+                    output::print_value(format, &serde_json::json!({ "body": text }))?;
+                } else {
+                    print!("{text}");
+                }
+                return Ok(0);
+            }
+        };
+
+        // A text request answers its own protocol's shape, not the data
+        // envelope's `status`/`id`. Print it and stop; a GraphQL `errors`
+        // array is the channel's answer, not a transport failure.
+        if self.sends_text() {
+            if quiet {
+                println!("{}", serde_json::to_string(&resp)?);
+            } else if matches!(format, OutputFormat::Json | OutputFormat::Yaml) {
+                output::print_value(format, &resp)?;
+            } else if let Some(body) = resp.as_str() {
+                println!("{body}");
+            } else {
+                println!("{}", serde_json::to_string_pretty(&resp)?);
+            }
+            return Ok(0);
+        }
 
         let status = resp["status"].as_str().unwrap_or("unknown");
 
@@ -188,9 +294,15 @@ impl SendCmd {
         channel: &str,
         payload: &Value,
     ) -> Result<i32> {
-        let body = self.build_body(payload)?;
-
-        let resp: Value = client.post(&paths::data_async(channel), &body).await?;
+        let body = serde_json::to_vec(&self.build_body(payload)?)?;
+        let answer = client
+            .post_bytes_with(
+                &paths::data_async(channel),
+                Bytes::from(body),
+                &self.request_options()?,
+            )
+            .await?;
+        let resp: Value = serde_json::from_slice(&answer)?;
 
         let trace_id = resp["trace_id"].as_str().unwrap_or("");
         // v1.0 always returns a trace_token alongside the id; polling with
@@ -363,5 +475,71 @@ mod tests {
             rendered.contains("--raw") && rendered.contains("--metadata"),
             "the error should name both flags: {rendered}"
         );
+    }
+
+    /// A JSON media type keeps the envelope path; anything else sends the
+    /// input verbatim, which is what a GraphQL channel reads.
+    #[test]
+    fn a_non_json_content_type_marks_the_body_as_text() {
+        assert!(!parse(&["send", "ch", "-d", "{}"]).sends_text());
+        assert!(
+            !parse(&[
+                "send",
+                "ch",
+                "-d",
+                "{}",
+                "--content-type",
+                "application/json; charset=utf-8"
+            ])
+            .sends_text()
+        );
+        assert!(
+            !parse(&[
+                "send",
+                "ch",
+                "-d",
+                "{}",
+                "--content-type",
+                "application/vnd.api+json"
+            ])
+            .sends_text()
+        );
+        assert!(
+            parse(&[
+                "send",
+                "ch",
+                "-d",
+                "{}",
+                "--content-type",
+                "application/graphql"
+            ])
+            .sends_text()
+        );
+    }
+
+    #[test]
+    fn headers_parse_into_request_options_and_name_the_bad_one() {
+        let cmd = parse(&[
+            "send",
+            "ch",
+            "-d",
+            "{}",
+            "--header",
+            "x-trace: 1",
+            "--header",
+            "accept: application/json",
+        ]);
+        let options = cmd.request_options().expect("options");
+        assert_eq!(options.content_type, None);
+        assert_eq!(
+            options.headers,
+            vec![
+                ("x-trace".to_string(), "1".to_string()),
+                ("accept".to_string(), "application/json".to_string()),
+            ]
+        );
+
+        let bad = parse(&["send", "ch", "-d", "{}", "--header", "nope"]);
+        assert!(bad.request_options().is_err());
     }
 }

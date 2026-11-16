@@ -262,16 +262,14 @@ impl Catalog {
                     for (entry, decl) in
                         plugin.entries().into_iter().zip(&plugin.manifest.functions)
                     {
-                        let handler = orion_plugin_host::PluginFunctionHandler::new(
+                        let handler = orion_plugin_host::PluginFunction::new(
                             std::sync::Arc::new(entry),
                             component.clone(),
                             sandbox.runtime.clone(),
                             limits,
-                        );
-                        handlers.push(orion_plugin_host::PluginFunction::new(
-                            handler,
                             decl.runtime_fields(),
-                        ));
+                        );
+                        handlers.push(handler);
                     }
                 }
                 None => {
@@ -374,47 +372,6 @@ fn placeholder_entries(names: &[String]) -> Vec<orion_engine::FunctionEntry> {
 /// that wrote out a set its own linter would reject is how a deployment comes
 /// to fail at apply having passed CI. The two differ in their boundary and in
 /// `require_ids`, and in nothing else, on purpose.
-/// The dependency aliases each provider of the target node declares, by
-/// driver id. Parsed from the same `--capabilities` file as
-/// [`capabilities_boundary`]; a provider absent from the map was not described
-/// by the file, so its bindings are left to the server.
-pub(crate) type ProviderDependencies = std::collections::BTreeMap<
-    String,
-    std::collections::BTreeMap<String, orion_api::v2::ProviderDependencyInfo>,
->;
-
-/// The dependency declarations in `--capabilities FILE`, or `None` without
-/// the flag (the target is unknown, so every binding is the server's call).
-pub(crate) fn capabilities_dependencies(
-    path: Option<&str>,
-) -> Result<Option<ProviderDependencies>, Box<dyn std::error::Error>> {
-    let Some(path) = path else {
-        return Ok(None);
-    };
-    let value: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path)?)
-        .map_err(|e| format!("--capabilities {path}: {e}"))?;
-    let answer = value
-        .get("data")
-        .filter(|answer| answer.is_object())
-        .unwrap_or(&value);
-    let Some(backends) = answer.get("provider_backends") else {
-        return Ok(Some(ProviderDependencies::new()));
-    };
-    let backends: Vec<orion_api::v2::ProviderBackendInfo> =
-        serde_json::from_value(backends.clone())
-            .map_err(|e| format!("--capabilities {path}: `provider_backends`: {e}"))?;
-    Ok(Some(
-        backends
-            .into_iter()
-            .filter_map(|backend| {
-                backend
-                    .dependencies
-                    .map(|dependencies| (backend.driver_id, dependencies))
-            })
-            .collect(),
-    ))
-}
-
 /// What `--capabilities FILE` records about the target, for
 /// `deployments plan|apply -d` to compare against the node it reaches. A file
 /// that names only some fields records only those; a directory compiled
@@ -470,109 +427,6 @@ pub(crate) fn capabilities_target(
     }))
 }
 
-/// Check every connection's `bindings` against the dependencies its provider
-/// declares. This is the offline form of the node's own check: an alias must
-/// exist, every non-optional alias must be bound, and a bound connection must
-/// run on the provider the dependency declares. Targets the capabilities file
-/// does not describe are left to the server.
-///
-/// Returns one message per refused connection, in set order.
-pub(crate) fn check_provider_bindings(
-    set: &orion_authoring::definitions::DefinitionSet,
-    dependencies: &ProviderDependencies,
-) -> Vec<String> {
-    use orion_authoring::definitions::Entity;
-    use serde_json::Value;
-
-    // The provider each connection in the set runs on, for the dependency's
-    // own provider check. A `connector_type` names a built-in driver and has
-    // no `provider`; such a target cannot be compared offline, so it is
-    // skipped rather than guessed at.
-    let providers: std::collections::BTreeMap<&str, &str> = set
-        .iter(Entity::Connector)
-        .filter_map(|definition| {
-            Some((
-                definition.doc.get("name")?.as_str()?,
-                definition.doc.get("provider")?.as_str()?,
-            ))
-        })
-        .collect();
-
-    let mut errors = Vec::new();
-    for definition in set.iter(Entity::Connector) {
-        let doc = &definition.doc;
-        let name = doc
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or(&definition.origin);
-        let Some(provider) = doc.get("provider").and_then(Value::as_str) else {
-            continue;
-        };
-        let Some(declared) = dependencies.get(provider) else {
-            continue;
-        };
-        let bindings = doc
-            .get("bindings")
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-
-        if bindings.is_empty() && declared.is_empty() {
-            continue;
-        }
-        if !bindings.is_empty() && declared.is_empty() {
-            errors.push(format!(
-                "connector '{name}' ({}): provider '{provider}' declares no dependencies, \
-                 so `bindings` has no alias to bind",
-                definition.origin
-            ));
-            continue;
-        }
-
-        for alias in bindings.keys() {
-            if !declared.contains_key(alias) {
-                errors.push(format!(
-                    "connector '{name}' ({}): provider '{provider}' declares no dependency \
-                     '{alias}' (it declares: {})",
-                    definition.origin,
-                    declared.keys().cloned().collect::<Vec<_>>().join(", ")
-                ));
-            }
-        }
-        for (alias, dependency) in declared {
-            if !dependency.optional && !bindings.contains_key(alias) {
-                errors.push(format!(
-                    "connector '{name}' ({}): provider '{provider}' requires dependency \
-                     '{alias}' to be bound",
-                    definition.origin
-                ));
-            }
-        }
-        for (alias, target) in &bindings {
-            let Some(dependency) = declared.get(alias) else {
-                continue;
-            };
-            let Some(required_provider) = &dependency.provider else {
-                continue;
-            };
-            let Some(target) = target.as_str() else {
-                continue;
-            };
-            if let Some(actual) = providers.get(target)
-                && *actual != required_provider.as_str()
-            {
-                errors.push(format!(
-                    "connector '{name}' ({}): `bindings.{alias}` names connection '{target}', \
-                     which runs on '{actual}', and dependency '{alias}' requires \
-                     '{required_provider}'",
-                    definition.origin
-                ));
-            }
-        }
-    }
-    errors
-}
-
 /// The channel drivers `--capabilities FILE` describes: a target node's
 /// `/runtime-capabilities` answer, as `orion-cli deployments capabilities -o
 /// json` prints it (bare, or inside a `data` envelope). `None` without the
@@ -608,8 +462,8 @@ pub(crate) fn capabilities_drivers(
 
 /// The [`Boundary`](orion_authoring::definitions::Boundary) parts
 /// `--capabilities FILE` describes: the node's channel drivers, and the
-/// operations its providers declare (`provider_backends[].operations`).
-/// Default without the flag.
+/// operations and dependency aliases its providers declare
+/// (`provider_backends[]`). Default without the flag.
 pub(crate) fn capabilities_boundary(
     path: Option<&str>,
 ) -> Result<orion_authoring::definitions::Boundary, Box<dyn std::error::Error>> {
@@ -633,11 +487,11 @@ pub(crate) fn capabilities_boundary(
         .unwrap_or_default();
     let mut operations = std::collections::BTreeMap::new();
     for backend in backends {
-        let Some(declared) = backend.operations else {
+        if backend.operations.is_none() && backend.dependencies.is_none() {
             continue;
-        };
+        }
         let mut description = orion_runtime::extensions::ProviderDescription::new();
-        for (name, op) in declared {
+        for (name, op) in backend.operations.into_iter().flatten() {
             let mut described = orion_runtime::extensions::OperationDescription::new();
             for alias in op.aliases {
                 described = described.with_alias(alias);
@@ -650,6 +504,19 @@ pub(crate) fn capabilities_boundary(
             }
             description = description.with_operation(name, described);
         }
+        for (alias, dependency) in backend.dependencies.into_iter().flatten() {
+            let mut described = orion_runtime::extensions::DependencyDescription::new();
+            if let Some(provider) = dependency.provider {
+                described = described.on_provider(provider);
+            }
+            for operation in dependency.operations {
+                described = described.with_operation(operation);
+            }
+            if dependency.optional {
+                described = described.optional();
+            }
+            description = description.with_dependency(alias, described);
+        }
         operations.insert(backend.driver_id, description);
     }
     boundary.provider_operations = Some(operations);
@@ -659,7 +526,6 @@ pub(crate) fn capabilities_boundary(
 fn load_and_gate(
     dir: &str,
     boundary: orion_authoring::definitions::Boundary,
-    dependencies: Option<&ProviderDependencies>,
     require_ids: bool,
     deny_warnings: bool,
     plugin_dirs: &[String],
@@ -691,13 +557,7 @@ fn load_and_gate(
     for finding in &report.findings {
         eprintln!("{finding}");
     }
-    let binding_errors = dependencies
-        .map(|dependencies| check_provider_bindings(&report.set, dependencies))
-        .unwrap_or_default();
-    for error in &binding_errors {
-        eprintln!("error: {error}");
-    }
-    let errors = report.errors() + binding_errors.len();
+    let errors = report.errors();
 
     // "Nothing here" is only true when nothing was *rejected* either. A file
     // the walk recognised and the validator then refused leaves the set

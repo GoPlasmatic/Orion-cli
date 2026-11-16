@@ -62,13 +62,10 @@ impl LintCmd {
             connectors: self.requires_connectors.clone(),
             ..super::capabilities_boundary(self.capabilities.as_deref()).map_err(boxed)?
         };
-        let dependencies =
-            super::capabilities_dependencies(self.capabilities.as_deref()).map_err(boxed)?;
         run_lint(
             &self.workflow,
             self.deny_warnings,
             boundary,
-            dependencies.as_ref(),
             self.definitions.as_deref(),
             &self.plugin_dirs,
         )
@@ -87,7 +84,6 @@ pub(crate) fn run_lint(
     workflow_path: &str,
     deny_warnings: bool,
     boundary: orion_authoring::definitions::Boundary,
-    dependencies: Option<&super::ProviderDependencies>,
     definitions: Option<&str>,
     plugin_dirs: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -97,13 +93,7 @@ pub(crate) fn run_lint(
     // the ones *between* files — which a per-file lint cannot see by
     // construction (#286).
     if std::path::Path::new(workflow_path).is_dir() {
-        return run_lint_set(
-            workflow_path,
-            deny_warnings,
-            boundary,
-            dependencies,
-            plugin_dirs,
-        );
+        return run_lint_set(workflow_path, deny_warnings, boundary, plugin_dirs);
     }
 
     let catalog = Catalog::load_opt(definitions, plugin_dirs)?;
@@ -220,20 +210,12 @@ fn run_lint_set(
     dir: &str,
     deny_warnings: bool,
     boundary: orion_authoring::definitions::Boundary,
-    dependencies: Option<&super::ProviderDependencies>,
     plugin_dirs: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     // `false`: a directory being authored may hold a workflow with no id yet.
     // A package must carry explicit ids because channels reference them across
     // the artifact; a directory has no such contract, and refusing an id-less
     // draft would make the gate unusable exactly when it is most wanted.
-    load_and_gate(
-        dir,
-        boundary,
-        dependencies,
-        false,
-        deny_warnings,
-        plugin_dirs,
-    )?;
+    load_and_gate(dir, boundary, false, deny_warnings, plugin_dirs)?;
     Ok(())
 }

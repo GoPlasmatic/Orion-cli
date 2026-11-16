@@ -677,7 +677,7 @@ fn provider_bindings_are_checked_against_the_target_capabilities() {
     std::fs::write(
         &capabilities,
         serde_json::json!({
-            "api_version": 1,
+            "api_version": 2,
             "edition": "enterprise",
             "channel_drivers": ["cron", "http", "rest"],
             "channel_driver_info": [],
@@ -714,7 +714,7 @@ fn provider_bindings_are_checked_against_the_target_capabilities() {
     let (ok, report) = compile("dist");
     assert!(ok, "{report}");
     let target = read_json(&dir.join("dist/target.json"));
-    assert_eq!(target["api_version"], 1);
+    assert_eq!(target["api_version"], 2);
     assert_eq!(target["edition"], "enterprise");
     assert_eq!(
         target["provider_digests"]["com.orion.models"],
@@ -739,7 +739,7 @@ fn provider_bindings_are_checked_against_the_target_capabilities() {
     let (ok, report) = compile("dist-missing");
     assert!(!ok, "{report}");
     assert!(
-        report.contains("requires dependency 'artifact_store'"),
+        report.contains("declares the dependency 'artifact_store'"),
         "{report}"
     );
 
@@ -758,8 +758,8 @@ fn provider_bindings_are_checked_against_the_target_capabilities() {
     let (ok, report) = compile("dist-wrong-provider");
     assert!(!ok, "{report}");
     assert!(
-        report.contains("runs on 'com.orion.smtp'")
-            && report.contains("requires 'com.orion.storage'"),
+        report.contains("runs on 'com.orion.storage'")
+            && report.contains("connection 'mailer' on 'com.orion.smtp'"),
         "{report}"
     );
     std::fs::remove_file(dir.join("conn-smtp.json")).unwrap();
@@ -802,7 +802,7 @@ fn an_edition_protocol_compiles_against_the_target_nodes_capabilities() {
     std::fs::write(
         &capabilities,
         serde_json::json!({
-            "api_version": 1,
+            "api_version": 2,
             "edition": "enterprise",
             "channel_drivers": ["cron", "http", "queue", "rest"],
             "channel_driver_info": [{
@@ -937,7 +937,7 @@ fn a_deployment_is_written_without_revisions() {
     assert!(report.contains("a connection has no tags"), "{report}");
 
     let deployment = read_json(&out.join("deployment.json"));
-    assert_eq!(deployment["schema_version"], 1);
+    assert_eq!(deployment["schema_version"], 2);
     let raw = std::fs::read_to_string(out.join("deployment.json")).unwrap();
     assert!(!raw.contains("revision"), "no revisions anywhere:\n{raw}");
 

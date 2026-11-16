@@ -2782,7 +2782,6 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 [[package]]
 name = "orion-api"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "chrono",
  "serde",
@@ -2793,7 +2792,6 @@ dependencies = [
 [[package]]
 name = "orion-authoring"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -2828,6 +2826,7 @@ dependencies = [
  "colored",
  "dataflow-rs",
  "dirs",
+ "futures-core",
  "orion-api",
  "orion-authoring",
  "orion-client",
@@ -2857,9 +2856,9 @@ dependencies = [
 [[package]]
 name = "orion-client"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "bytes",
+ "futures-core",
  "orion-api",
  "percent-encoding",
  "reqwest",
@@ -2872,7 +2871,6 @@ dependencies = [
 [[package]]
 name = "orion-common"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "aes-gcm",
  "aws-lc-rs",
@@ -2911,7 +2909,6 @@ dependencies = [
 [[package]]
 name = "orion-definitions"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "serde_json",
 ]
@@ -2919,7 +2916,6 @@ dependencies = [
 [[package]]
 name = "orion-engine"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "arc-swap",
  "argon2",
@@ -2965,7 +2961,6 @@ dependencies = [
 [[package]]
 name = "orion-extension-api"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "async-trait",
  "orion-api",
@@ -2977,7 +2972,6 @@ dependencies = [
 [[package]]
 name = "orion-http"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "axum",
  "axum-server",
@@ -3017,7 +3011,6 @@ dependencies = [
 [[package]]
 name = "orion-plugin-host"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "dataflow-rs",
  "orion-common",
@@ -3033,7 +3026,6 @@ dependencies = [
 [[package]]
 name = "orion-runtime"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -3078,7 +3070,6 @@ dependencies = [
 [[package]]
 name = "orion-server"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "axum-server",
  "chrono",
@@ -3107,7 +3098,6 @@ dependencies = [
 [[package]]
 name = "orion-storage"
 version = "2.0.0-rc.1"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=15c632a099a989ca48e8a3d16ba2beb7901d2a29#15c632a099a989ca48e8a3d16ba2beb7901d2a29"
 dependencies = [
  "async-trait",
  "chrono",
@@ -3741,6 +3731,7 @@ dependencies = [
  "base64 0.23.1",
  "bytes",
  "futures-core",
+ "futures-util",
  "http",
  "http-body",
  "http-body-util",
@@ -3761,12 +3752,14 @@ dependencies = [
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
+ "tokio-util",
  "tower",
  "tower-http 0.6.11",
  "tower-service",
  "url",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-streams",
  "web-sys",
 ]
 
@@ -5431,6 +5424,19 @@ dependencies = [
  "indexmap 2.14.2",
  "wasm-encoder",
  "wasmparser",
+]
+
+[[package]]
+name = "wasm-streams"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d1ec4f6517c9e11ae630e200b2b65d193279042e28edd4a2cda233e46670bbb"
+dependencies = [
+ "futures-util",
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

@@ -10,7 +10,7 @@
 
 use anyhow::Result;
 use orion_api::codes;
-use orion_client::{ClientError, StatusCode};
+use orion_client::{Bytes, ClientError, Method, RequestOptions, StatusCode};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
@@ -103,6 +103,52 @@ impl OrionClient {
         self.inner.post(path, body).await.map_err(render)
     }
 
+    /// POST a body with per-request content type and headers. The body is
+    /// already bytes: a JSON envelope the caller serialized, or a GraphQL
+    /// document sent verbatim.
+    pub async fn post_bytes_with(
+        &self,
+        path: &str,
+        body: Bytes,
+        options: &RequestOptions,
+    ) -> Result<Bytes> {
+        #[cfg(test)]
+        if let Some(ref mock) = self.mock {
+            let value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+            let answer = mock("POST", path, Some(&value))?;
+            return Ok(Bytes::from(serde_json::to_vec(&answer)?));
+        }
+        self.inner
+            .request_bytes_with(Method::POST, path, Some(body), options)
+            .await
+            .map_err(render)
+    }
+
+    /// Stream a response body to `on_chunk` as it arrives. Used by
+    /// `streams tail`; the transport's response ceiling and retry policy are
+    /// the shared client's.
+    pub async fn stream_chunks<F>(
+        &self,
+        path: &str,
+        options: &RequestOptions,
+        mut on_chunk: F,
+    ) -> Result<()>
+    where
+        F: FnMut(Bytes) -> Result<()>,
+    {
+        use futures_core::Stream as _;
+        use std::future::poll_fn;
+        let mut stream = Box::pin(self.inner.get_stream(path, options).await.map_err(render)?);
+        loop {
+            let item = poll_fn(|cx| stream.as_mut().poll_next(cx)).await;
+            match item {
+                None => return Ok(()),
+                Some(Ok(chunk)) => on_chunk(chunk)?,
+                Some(Err(error)) => return Err(render(error)),
+            }
+        }
+    }
+
     pub async fn post_dto<Req: serde::Serialize + ?Sized, Resp: DeserializeOwned>(
         &self,
         path: &str,
@@ -137,11 +183,15 @@ impl orion_client::V2Admin for OrionClient {
         &self,
         method: orion_client::Method,
         path: &str,
-        body: Option<Value>,
-    ) -> Result<Value> {
+        body: Option<orion_client::Bytes>,
+    ) -> Result<orion_client::Bytes> {
         #[cfg(test)]
         if let Some(ref mock) = self.mock {
-            return mock(method.as_str(), path, body.as_ref());
+            let body = body
+                .as_deref()
+                .and_then(|bytes| serde_json::from_slice::<Value>(bytes).ok());
+            let answer = mock(method.as_str(), path, body.as_ref())?;
+            return Ok(orion_client::Bytes::from(serde_json::to_vec(&answer)?));
         }
         orion_client::V2Admin::send(&self.inner, method, path, body)
             .await
@@ -212,6 +262,9 @@ pub(crate) fn render(err: ClientError) -> anyhow::Error {
         }
         ClientError::Transport { source } => {
             format!("Failed to read response body: {source}")
+        }
+        ClientError::InvalidRequestHeader { name, message } => {
+            format!("Invalid request header '{name}': {message}")
         }
         ClientError::ResponseTooLarge { url, max_bytes } => {
             format!("Response from {url} exceeded the {max_bytes}-byte client limit")

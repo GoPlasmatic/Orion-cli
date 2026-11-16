@@ -112,8 +112,6 @@ impl SqlCmd {
         });
         let config = orion_common::config::load_config(server_config.as_deref())
             .map_err(|e| anyhow::anyhow!("{e}"))?;
-        let dependencies = super::authoring::capabilities_dependencies(capabilities.as_deref())
-            .map_err(|e| anyhow::anyhow!("{e}"))?;
         run_sql_check(SqlCheckRequest {
             path,
             connectors,
@@ -128,7 +126,6 @@ impl SqlCmd {
                 ..super::authoring::capabilities_boundary(capabilities.as_deref())
                     .map_err(|e| anyhow::anyhow!("{e}"))?
             },
-            dependencies: dependencies.as_ref(),
             plugin_dirs,
             config: &config,
         })
@@ -158,8 +155,6 @@ pub(crate) struct SqlCheckRequest<'a> {
     pub(crate) roles: &'a [String],
     pub(crate) format: ClippyFormat,
     pub(crate) boundary: orion_authoring::definitions::Boundary,
-    /// The target's provider dependency declarations, from `--capabilities`.
-    pub(crate) dependencies: Option<&'a super::authoring::ProviderDependencies>,
     pub(crate) plugin_dirs: &'a [String],
     pub(crate) config: &'a orion_common::config::AppConfig,
 }
@@ -238,20 +233,6 @@ pub(crate) async fn run_sql_check(req: SqlCheckRequest<'_>) -> Result<i32, CliEr
             lint_errors.len()
         );
         return Ok(2);
-    }
-    if let Some(dependencies) = req.dependencies {
-        let errors = super::authoring::check_provider_bindings(&report.set, dependencies);
-        for error in &errors {
-            eprintln!("error: {error}");
-        }
-        if !errors.is_empty() {
-            println!(
-                "{}: {} binding error(s) — fix those first; no statement was checked",
-                req.path,
-                errors.len()
-            );
-            return Ok(2);
-        }
     }
 
     let statements = sql_statements(&report.set);

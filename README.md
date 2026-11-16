@@ -72,7 +72,8 @@ what the previous revision deployed.
 | `provider` | Author, lint, pack, upload, admit and revoke connector provider packages |
 | `cron` | The scheduled-run ledger — status, list, get, retry or cancel an occurrence |
 | `circuit-breakers` | Inspect the node-local breaker map and reset a key (fleet-wide in cluster mode) |
-| `send` | Send data through channels (sync or async; `--profile` for timing breakdown) |
+| `send` | Send data through channels (sync or async; `--profile` for timing breakdown; `--header`/`--content-type` for text protocols) |
+| `streams` | Follow a channel's server-sent event stream (`streams tail <channel>`) |
 | `traces` | View and monitor execution traces |
 | `engine` | View what the engine on this node serves |
 | `functions` | Inspect workflow task functions registered in the engine |
@@ -271,8 +272,12 @@ serve channels whose protocol has a different shape:
 # graphql: a JSON GraphQL document, sent verbatim
 orion-cli send gql -d '{"query": "{ orders { id } }"}' --raw
 
-# sse: timer-fed, so there is nothing to send; consume the stream
-curl -N "$ORION_SERVER_URL/api/v2/data/events"
+# or send a GraphQL document as its own body, with headers
+orion-cli send gql -f query.graphql --content-type application/graphql \
+  --header 'x-request-id: 1234'
+
+# sse: timer-fed, so there is nothing to send; follow the stream
+orion-cli streams tail events
 
 # kafka: ingress-fed, with no HTTP route; publish through the broker
 ```

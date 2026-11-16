@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Canary rollout, compiled or hand-written.** `compile -d` can produce a
+  split: two workflow files share a `workflow_id` with distinct `version`s,
+  and the channel's `rollouts` selects a version per bucket. The deployer
+  assigns each variant its own revision, requires every one, and emits the
+  manifest's `rollouts`. Hand-written `-f` manifests still work, and both
+  forms are validated before the request. Standard and Enterprise accept a
+  split; Community refuses it (`TIER_NOT_ENABLED`).
+- **Request headers, text bodies and SSE.** `send` takes repeatable
+  `--header 'name: value'` and `--content-type`, sending a GraphQL or other
+  text body verbatim. `streams tail <channel>` follows a `text/event-stream`
+  response incrementally instead of requiring `curl -N`.
+- **Tiered provider scaffolds.** `provider scaffold --tier
+  community|standard|enterprise` writes the tier into `distribution.json`;
+  omitting it keeps `community`. The v2 admin contract moves to API version 2.
 - **Community, Standard and Enterprise from one binary.** The edition is read
   from the target's `/runtime-capabilities`; there is no edition-specific
   build. `deployments capabilities` renders the edition, admission policy,
@@ -21,10 +35,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dependencies, and `compile --capabilities` writes a CLI-owned `target.json`
   beside the deployment. `plan|apply -d` refuses an API revision mismatch or a
   channel protocol the target does not serve before uploading.
-- **Canary rollout.** Hand-written `-f` manifests may split a channel's
-  traffic across workflow revisions with `rollouts`; the CLI validates the
-  partition and each revision's presence in `requires`, and refuses the split
-  on a Community node before the request. Standard and Enterprise accept it.
 - **Edition provider and connection UX.** `provider list` shows tier and
   admission/artifact state, `provider get` summarizes a package, and
   `provider admit --lock` passes a provider lock. `connections list|get|probe`

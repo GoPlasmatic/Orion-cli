@@ -85,12 +85,10 @@ pub(crate) fn run_compile(req: CompileRequest<'_>) -> Result<(), Box<dyn std::er
     // id, and the target matches a recompiled one to what it deploys by them.
     // A deployment is the whole of what the target serves, so nothing it
     // references may live outside it: the boundary is empty.
-    let dependencies = super::capabilities_dependencies(req.capabilities)?;
     let target = super::capabilities_target(req.capabilities)?;
     let (set, _) = load_and_gate(
         req.dir,
         super::capabilities_boundary(req.capabilities)?,
-        dependencies.as_ref(),
         true,
         req.deny_warnings,
         req.plugin_dirs,

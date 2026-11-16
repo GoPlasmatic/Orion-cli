@@ -19,6 +19,7 @@ pub mod metrics;
 pub mod plugin;
 pub mod providers;
 pub mod sql;
+pub mod streams;
 pub mod traces;
 pub mod v2;
 
@@ -55,6 +56,9 @@ pub enum Commands {
 
     /// Send data to a channel for synchronous or asynchronous processing
     Send(data::SendCmd),
+
+    /// Follow a channel's server-sent event stream
+    Streams(streams::StreamsCmd),
 
     /// View and monitor execution traces for processed data
     Traces(traces::TracesCmd),

@@ -325,7 +325,10 @@ mod tests {
             let client =
                 OrionClient::with_mock_transport(move |_, _, _| Ok(answer.clone())).unwrap();
             let err = require_api_version(&client).await.unwrap_err().to_string();
-            assert!(err.contains("this client speaks version 1"), "{err}");
+            assert!(
+                err.contains(&format!("this client speaks version {API_VERSION}")),
+                "{err}"
+            );
         }
     }
 
@@ -384,6 +387,7 @@ mod tests {
             provider_id: "memory-cache".to_string(),
             version: "2.0.0".to_string(),
             kind: ImplementationKind::Rust,
+            tier: None,
         })
         .run(&client, &fmt, true)
         .await
@@ -709,6 +713,139 @@ mod tests {
         assert_eq!(
             channel["requires"],
             json!([{"kind": "workflow", "id": "w", "revision": 6}])
+        );
+    }
+
+    /// A v2 directory with two variants of one workflow and a split channel
+    /// assigns each variant its own revision, requires both from the channel,
+    /// and emits the manifest's `rollouts`.
+    #[tokio::test]
+    async fn apply_dir_assigns_canary_revisions_and_rollouts() {
+        use std::sync::{Arc, Mutex};
+        let dir = tempfile::tempdir().unwrap();
+        let v1 = "c".repeat(64);
+        let v2 = "d".repeat(64);
+        let channel_hex = "e".repeat(64);
+        std::fs::create_dir_all(dir.path().join("definitions")).unwrap();
+        for (hex, name) in [(&v1, "v1"), (&v2, "v2")] {
+            std::fs::write(
+                dir.path().join("definitions").join(format!("{hex}.json")),
+                format!(r#"{{"kind":"workflow","definition":{{"name":"{name}","tasks":[]}}}}"#),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            dir.path()
+                .join("definitions")
+                .join(format!("{channel_hex}.json")),
+            r#"{"kind":"channel","definition":{"name":"c","protocol":"rest"}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("deployment.json"),
+            format!(
+                r#"{{"schema_version":2,"members":[
+                {{"kind":"channel","id":"c","definition":"sha256:{channel_hex}",
+                  "requires":[{{"kind":"workflow","id":"w"}}],
+                  "rollouts":[
+                    {{"workflow":"w","definition":"sha256:{v1}","start_bucket":0,"end_bucket":50}},
+                    {{"workflow":"w","definition":"sha256:{v2}","start_bucket":50,"end_bucket":100}}
+                  ]}},
+                {{"kind":"workflow","id":"w","definition":"sha256:{v1}","requires":[]}},
+                {{"kind":"workflow","id":"w","definition":"sha256:{v2}","requires":[]}}]}}"#
+            ),
+        )
+        .unwrap();
+
+        let applied: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
+        let seen = applied.clone();
+        let client = OrionClient::with_mock_transport(move |method, path, body| {
+            let body = body.cloned().unwrap_or(Value::Null);
+            match (method, path) {
+                ("GET", "/api/v2/admin/deployments") => to_value(DeploymentsPage {
+                    head_revision: 0,
+                    data: vec![],
+                    limit: 50,
+                    ..Default::default()
+                }),
+                ("POST", "/api/v2/admin/definitions") => {
+                    let name = body["definition"]["name"].as_str().unwrap_or_default();
+                    let (kind, hex) = match name {
+                        "v1" => (EntityKind::Workflow, v1.clone()),
+                        "v2" => (EntityKind::Workflow, v2.clone()),
+                        _ => (EntityKind::Channel, channel_hex.clone()),
+                    };
+                    to_value(DefinitionResponse {
+                        digest: format!("sha256:{hex}"),
+                        kind,
+                        size_bytes: 1,
+                        advisories: vec![],
+                    })
+                }
+                ("GET", "/api/v2/admin/runtime-capabilities") => {
+                    to_value(capabilities(EditionTier::Community, vec![]))
+                }
+                ("POST", "/api/v2/admin/deployment-plans") => {
+                    assert_eq!(body["base_revision"], 0);
+                    to_value(plan(0, "sha256:next"))
+                }
+                ("POST", "/api/v2/admin/deployments") => {
+                    *seen.lock().unwrap() = Some(body);
+                    to_value(committed(1, vec![]))
+                }
+                _ => anyhow::bail!("unexpected {method} {path}"),
+            }
+        })
+        .unwrap();
+
+        let code = DeploymentsCmd::new(DeploymentsSubcommand::Apply {
+            file: None,
+            dir: Some(dir.path().to_string_lossy().to_string()),
+            base_revision: None,
+            reviewed_digest: None,
+            idempotency_key: None,
+            reason: "cli apply".to_string(),
+            wait_ms: 0,
+            wait_target: "this-node".to_string(),
+        })
+        .run(&client, &OutputFormat::Json, true)
+        .await
+        .unwrap();
+        assert_eq!(code, 0);
+
+        let request = applied.lock().unwrap().clone().expect("applied");
+        let members = request["manifest"]["members"].as_array().unwrap();
+        let workflows: Vec<&Value> = members
+            .iter()
+            .filter(|m| m["entity"]["kind"] == "workflow")
+            .collect();
+        assert_eq!(workflows.len(), 2, "{members:?}");
+        let mut revisions: Vec<u64> = workflows
+            .iter()
+            .map(|m| m["entity"]["revision"].as_u64().unwrap())
+            .collect();
+        revisions.sort();
+        assert_eq!(revisions, vec![1, 2], "each variant takes its own revision");
+
+        let channel = members
+            .iter()
+            .find(|m| m["entity"]["kind"] == "channel")
+            .unwrap();
+        let required: Vec<u64> = channel["requires"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["kind"] == "workflow")
+            .map(|r| r["revision"].as_u64().unwrap())
+            .collect();
+        assert_eq!(required, vec![1, 2], "both revisions are required");
+        assert_eq!(
+            channel["rollouts"],
+            json!([
+                {"workflow_revision": 1, "start_bucket": 0, "end_bucket": 50},
+                {"workflow_revision": 2, "start_bucket": 50, "end_bucket": 100}
+            ]),
+            "{channel}"
         );
     }
 }

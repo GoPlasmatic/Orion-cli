@@ -18,9 +18,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use orion_api::v2::{
-    COMPILED_DEPLOYMENT_SCHEMA_VERSION, CompiledConnection, CompiledDeployment,
+    COMPILED_DEPLOYMENT_SCHEMA_VERSION, CompiledConnection, CompiledDeployment, CompiledRollout,
     ConnectionRevisionResponse, CreateConnectionRevisionRequest, Definition, DeploymentManifest,
-    EditionTier, EntityKind, EntityRef, ManifestMember,
+    EditionTier, EntityKind, EntityRef, ManifestMember, RolloutInterval,
 };
 use orion_client::V2Admin;
 use serde::{Deserialize, Serialize};
@@ -76,26 +76,40 @@ impl DeploymentDir {
         })?;
         let deployment: CompiledDeployment = serde_json::from_str(&text)
             .with_context(|| format!("'{}' is not a deployment", manifest_path.display()))?;
-        if deployment.schema_version != COMPILED_DEPLOYMENT_SCHEMA_VERSION {
+        if !CompiledDeployment::supports_schema_version(deployment.schema_version) {
             bail!(
-                "'{}' has schema_version {}; this orion-cli reads {}",
+                "'{}' has schema_version {}; this orion-cli reads 1 through {}",
                 manifest_path.display(),
                 deployment.schema_version,
                 COMPILED_DEPLOYMENT_SCHEMA_VERSION
             );
         }
 
-        let mut seen = BTreeSet::new();
+        let mut seen: BTreeSet<(EntityKind, String)> = BTreeSet::new();
+        let mut unique = BTreeSet::new();
         let mut definitions = BTreeMap::new();
         let mut connections = BTreeMap::new();
+        // (workflow id, definition digest) of every workflow member, for
+        // resolving a channel's rollout entries.
+        let mut workflow_members: BTreeSet<(String, String)> = BTreeSet::new();
         for member in &deployment.members {
-            if !seen.insert((member.kind, member.id.as_str())) {
+            let what = format!("{} '{}'", member.kind, member.id);
+            if !member.rollouts.is_empty() && member.kind != EntityKind::Channel {
+                bail!("{what} carries `rollouts`, and only a channel has a traffic split");
+            }
+            // Two workflows may share an id: they are two revisions of one
+            // workflow, selected by a channel's rollouts. Every other kind
+            // is unique by id, as it always was.
+            if member.kind != EntityKind::Workflow
+                && !unique.insert((member.kind, member.id.clone()))
+            {
                 bail!(
                     "deployment.json lists {} '{}' twice",
                     member.kind,
                     member.id
                 );
             }
+            seen.insert((member.kind, member.id.clone()));
             if member.kind == EntityKind::Connection {
                 let name = member.connection.as_deref().unwrap_or(&member.id);
                 let path = root.join("connections").join(format!("{name}.json"));
@@ -119,27 +133,19 @@ impl DeploymentDir {
                 let Some(digest) = member.definition.as_deref() else {
                     bail!("{} '{}' names no definition", member.kind, member.id);
                 };
-                let Ok(parsed) = orion_api::Digest::parse(digest) else {
-                    bail!(
-                        "{} '{}' names definition '{digest}', which is not a sha256: digest",
-                        member.kind,
-                        member.id
-                    );
-                };
-                // `hex()` is exactly 64 lowercase hex characters, so the
-                // digest cannot name a path outside `definitions/`.
-                let path = root
-                    .join("definitions")
-                    .join(format!("{}.json", parsed.hex()));
-                if !path.is_file() {
-                    bail!(
-                        "{} '{}' names definition {digest}, and '{}' is not there",
-                        member.kind,
-                        member.id,
-                        path.display()
-                    );
-                }
+                let path = definition_path(root, digest, &what)?;
                 definitions.insert(digest.to_string(), path);
+                if member.kind == EntityKind::Workflow {
+                    workflow_members.insert((member.id.clone(), digest.to_string()));
+                }
+                if !member.rollouts.is_empty() {
+                    validate_compiled_rollouts(&member.rollouts)?;
+                    for rollout in &member.rollouts {
+                        let at = format!("channel '{}' rollout '{}'", member.id, rollout.workflow);
+                        let path = definition_path(root, &rollout.definition, &at)?;
+                        definitions.insert(rollout.definition.clone(), path);
+                    }
+                }
             } else {
                 bail!(
                     "deployment.json lists '{}' of kind '{}', which a deployment cannot carry",
@@ -148,9 +154,77 @@ impl DeploymentDir {
                 );
             }
         }
+
+        // A channel serves the workflow its `requires` names. With no
+        // rollouts it must be the only revision of that id in the set; with
+        // rollouts, each entry must name one of the workflow members.
+        for member in &deployment.members {
+            if member.kind != EntityKind::Channel {
+                continue;
+            }
+            let required_workflows: Vec<&str> = member
+                .requires
+                .iter()
+                .filter(|requirement| requirement.kind == EntityKind::Workflow)
+                .map(|requirement| requirement.id.as_str())
+                .collect();
+            if required_workflows.len() > 1 {
+                bail!(
+                    "channel '{}' requires more than one workflow ({}); a channel serves one",
+                    member.id,
+                    required_workflows.join(", ")
+                );
+            }
+            let required = required_workflows.first().copied();
+            if member.rollouts.is_empty() {
+                if let Some(id) = required {
+                    let revisions = deployment
+                        .members
+                        .iter()
+                        .filter(|other| other.kind == EntityKind::Workflow && other.id == id)
+                        .count();
+                    if revisions > 1 {
+                        bail!(
+                            "channel '{}' serves workflow '{id}', which has {revisions} revisions \
+                             in the set; name each bucket's revision with `rollouts`",
+                            member.id
+                        );
+                    }
+                }
+                continue;
+            }
+            let Some(required) = required else {
+                bail!(
+                    "channel '{}' has `rollouts` and requires no workflow",
+                    member.id
+                );
+            };
+            for rollout in &member.rollouts {
+                if rollout.workflow != required {
+                    bail!(
+                        "channel '{}' rollout names workflow '{}', and the channel requires \
+                         '{required}'",
+                        member.id,
+                        rollout.workflow
+                    );
+                }
+                if !workflow_members
+                    .contains(&(rollout.workflow.clone(), rollout.definition.clone()))
+                {
+                    bail!(
+                        "channel '{}' rollout names workflow '{}' definition {}, which \
+                         deployment.json does not list",
+                        member.id,
+                        rollout.workflow,
+                        rollout.definition
+                    );
+                }
+            }
+        }
+
         for member in &deployment.members {
             for req in &member.requires {
-                if !seen.contains(&(req.kind, req.id.as_str())) {
+                if !seen.contains(&(req.kind, req.id.clone())) {
                     bail!(
                         "{} '{}' requires {} '{}', which deployment.json does not list",
                         member.kind,
@@ -188,6 +262,66 @@ impl DeploymentDir {
             target,
         })
     }
+}
+
+/// The path of a definition digest in a compiled directory, or why it cannot
+/// be one. `Digest::hex` is exactly 64 lowercase hex characters, so the
+/// digest cannot name a path outside `definitions/`.
+fn definition_path(root: &Path, digest: &str, what: &str) -> Result<PathBuf> {
+    let Ok(parsed) = orion_api::Digest::parse(digest) else {
+        bail!("{what} names definition '{digest}', which is not a sha256: digest");
+    };
+    let path = root
+        .join("definitions")
+        .join(format!("{}.json", parsed.hex()));
+    if !path.is_file() {
+        bail!(
+            "{what} names definition {digest}, and '{}' is not there",
+            path.display()
+        );
+    }
+    Ok(path)
+}
+
+/// Refuse a split that the server's revision-based partition check would
+/// refuse after the deployer assigned revisions: gaps, overlaps, bad bounds,
+/// a repeated variant, or intervals that do not cover `[0, 100)`.
+fn validate_compiled_rollouts(rollouts: &[CompiledRollout]) -> Result<()> {
+    if rollouts.is_empty() {
+        bail!("a channel's `rollouts` list is empty");
+    }
+    let mut sorted: Vec<&CompiledRollout> = rollouts.iter().collect();
+    sorted.sort_by_key(|rollout| (rollout.start_bucket, rollout.end_bucket));
+    let mut seen = BTreeSet::new();
+    let mut cursor = 0u8;
+    for rollout in &sorted {
+        if !seen.insert((rollout.workflow.as_str(), rollout.definition.as_str())) {
+            bail!(
+                "channel rollout names workflow '{}' definition {} twice",
+                rollout.workflow,
+                rollout.definition
+            );
+        }
+        if rollout.start_bucket >= rollout.end_bucket || rollout.end_bucket > 100 {
+            bail!(
+                "channel rollout for workflow '{}' has invalid bucket bounds [{}, {})",
+                rollout.workflow,
+                rollout.start_bucket,
+                rollout.end_bucket
+            );
+        }
+        if rollout.start_bucket != cursor {
+            bail!(
+                "channel rollouts have a gap or overlap at bucket {cursor} vs {}",
+                rollout.start_bucket
+            );
+        }
+        cursor = rollout.end_bucket;
+    }
+    if cursor != 100 {
+        bail!("channel rollouts end at {cursor}, expected 100");
+    }
+    Ok(())
 }
 
 /// `(kind, id, revision, definition digest)` of one deployed member.
@@ -253,9 +387,11 @@ impl History {
         self.all.extend(members);
     }
 
-    /// The revision `(kind, id)` takes for `digest`: kept, taken back, or
-    /// the next one.
-    pub fn revision_for(&self, kind: EntityKind, id: &str, digest: &str) -> u64 {
+    /// The revision `(kind, id)` takes for `digest`: kept, taken back, or the
+    /// next one above `floor` — the highest revision this deploy pass has
+    /// already assigned. Two new variants of one workflow in a canary would
+    /// otherwise both take `max(history) + 1` and collide.
+    pub fn revision_for_above(&self, kind: EntityKind, id: &str, digest: &str, floor: u64) -> u64 {
         let same = |list: &[Deployed]| {
             list.iter()
                 .filter(|(k, i, _, d)| *k == kind && i == id && d == digest)
@@ -271,6 +407,7 @@ impl History {
             .map(|(_, _, r, _)| *r)
             .max()
             .unwrap_or(0)
+            .max(floor)
             + 1
     }
 
@@ -473,42 +610,99 @@ pub async fn prepare(
     }
 
     // Every member's revision, then every requirement resolved against them.
-    let mut revisions: BTreeMap<(EntityKind, String), (u64, String)> = BTreeMap::new();
+    // Workflows are keyed by their definition too: two revisions of one id
+    // are different members.
+    let mut revisions: BTreeMap<(EntityKind, String, String), (u64, String)> = BTreeMap::new();
+    // The highest revision this pass has assigned per (kind, id), so two new
+    // variants of one workflow do not both take `history_max + 1`.
+    let mut assigned_floor: BTreeMap<(EntityKind, String), u64> = BTreeMap::new();
     for member in &dir.deployment.members {
+        let digest = member.definition.clone().unwrap_or_default();
         let assigned = if member.kind == EntityKind::Connection {
             connection_revisions
                 .get(&member.id)
                 .cloned()
                 .with_context(|| format!("connection '{}' was not resolved", member.id))?
         } else {
-            let digest = member.definition.clone().unwrap_or_default();
-            (
-                history.revision_for(member.kind, &member.id, &digest),
-                digest,
-            )
+            let key = (member.kind, member.id.clone());
+            let floor = assigned_floor.get(&key).copied().unwrap_or(0);
+            let revision = history.revision_for_above(member.kind, &member.id, &digest, floor);
+            assigned_floor.insert(key, revision);
+            (revision, digest.clone())
         };
-        revisions.insert((member.kind, member.id.clone()), assigned);
+        revisions.insert((member.kind, member.id.clone(), digest), assigned);
     }
+
+    let revision_of = |kind: EntityKind, id: &str, digest: &str| -> Result<(u64, String)> {
+        revisions
+            .get(&(kind, id.to_string(), digest.to_string()))
+            .cloned()
+            .with_context(|| format!("{kind} '{id}' definition {digest} was assigned no revision"))
+    };
+    // A requirement names a kind and id, not a digest. Every kind but a
+    // workflow is unique by id; a workflow's variants are disambiguated by
+    // the channel's rollouts above, and a non-split channel was refused in
+    // `read` when its workflow had more than one.
+    let unique_revision = |kind: EntityKind, id: &str| -> Result<u64> {
+        let mut found = revisions
+            .iter()
+            .filter(|((known_kind, known_id, _), _)| *known_kind == kind && known_id == id)
+            .map(|(_, (revision, _))| *revision);
+        let first = found
+            .next()
+            .with_context(|| format!("{kind} '{id}' was assigned no revision"))?;
+        if found.next().is_some() {
+            bail!(
+                "{kind} '{id}' has more than one revision in the set; name each bucket's \
+                 revision with a channel `rollouts` list"
+            );
+        }
+        Ok(first)
+    };
 
     let mut members = Vec::new();
     let mut assigned = Vec::new();
     for member in &dir.deployment.members {
-        let revision_of = |kind: EntityKind, id: &str| {
-            revisions
-                .get(&(kind, id.to_string()))
-                .cloned()
-                .with_context(|| format!("{kind} '{id}' was assigned no revision"))
-        };
-        let (revision, digest) = revision_of(member.kind, &member.id)?;
+        let digest = member.definition.clone().unwrap_or_default();
+        let (revision, digest) = revision_of(member.kind, &member.id, &digest)?;
+        let split = member.kind == EntityKind::Channel && !member.rollouts.is_empty();
         let mut requires = Vec::new();
         for req in &member.requires {
-            let (rev, _) = revision_of(req.kind, &req.id)?;
-            requires.push(EntityRef {
-                kind: req.kind,
-                id: req.id.clone(),
-                revision: rev,
-            });
+            if split && req.kind == EntityKind::Workflow {
+                // The channel's split names every workflow revision it
+                // serves; the compiled `requires` names the id once.
+                for rollout in &member.rollouts {
+                    let (workflow_revision, _) =
+                        revision_of(EntityKind::Workflow, &rollout.workflow, &rollout.definition)?;
+                    requires.push(EntityRef {
+                        kind: EntityKind::Workflow,
+                        id: req.id.clone(),
+                        revision: workflow_revision,
+                    });
+                }
+            } else {
+                requires.push(EntityRef {
+                    kind: req.kind,
+                    id: req.id.clone(),
+                    revision: unique_revision(req.kind, &req.id)?,
+                });
+            }
         }
+        requires.sort();
+        requires.dedup();
+        let rollouts = member
+            .rollouts
+            .iter()
+            .map(|rollout| {
+                let (workflow_revision, _) =
+                    revision_of(EntityKind::Workflow, &rollout.workflow, &rollout.definition)?;
+                Ok(RolloutInterval {
+                    workflow_revision,
+                    start_bucket: rollout.start_bucket,
+                    end_bucket: rollout.end_bucket,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
         members.push(ManifestMember {
             entity: EntityRef {
                 kind: member.kind,
@@ -518,7 +712,7 @@ pub async fn prepare(
             definition_digest: digest,
             owning_package: None,
             requires,
-            rollouts: Vec::new(),
+            rollouts,
         });
         assigned.push(Assigned {
             kind: member.kind,
@@ -631,12 +825,12 @@ mod tests {
             "sha256:3",
             &manifest(member(Workflow, "w", 1, "sha256:a")),
         );
-        assert_eq!(history.revision_for(Workflow, "w", "sha256:a"), 1);
-        assert_eq!(history.revision_for(Workflow, "w", "sha256:b"), 2);
+        assert_eq!(history.revision_for_above(Workflow, "w", "sha256:a", 0), 1);
+        assert_eq!(history.revision_for_above(Workflow, "w", "sha256:b", 0), 2);
         // New content goes past every revision the entity ever had, not the
         // head's: revision 2 already names something else.
-        assert_eq!(history.revision_for(Workflow, "w", "sha256:c"), 3);
-        assert_eq!(history.revision_for(Channel, "c", "sha256:z"), 1);
+        assert_eq!(history.revision_for_above(Workflow, "w", "sha256:c", 0), 3);
+        assert_eq!(history.revision_for_above(Channel, "c", "sha256:z", 0), 1);
         assert_eq!(history.head_manifest_digest.as_deref(), Some("sha256:3"));
     }
 

@@ -56,6 +56,8 @@ orion-api = { git = "https://github.com/GoPlasmatic/Orion", rev = "15c632a099a98
 # The shared transport. That crate owns reqwest; the CLI has no direct HTTP
 # dependency.
 orion-client = { git = "https://github.com/GoPlasmatic/Orion", rev = "15c632a099a989ca48e8a3d16ba2beb7901d2a29" }
+# Direct so `streams tail` can poll the streaming response without a util crate.
+futures-core = "0.3"
 # Same spec as orion-server so the lockfile carries one `toml` tree.
 toml = { version = "1.1", default-features = false, features = ["parse", "display", "serde"] }
 # Plugin uploads: the component travels as base64 inside the JSON body.
