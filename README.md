@@ -459,7 +459,7 @@ The CLI is built from the Orion Community crates (`orion-api`, `orion-client`,
 dependencies on one Orion release commit:
 
 ```toml
-orion-api = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
+orion-api = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
 ```
 
 The pin is the Orion 2.0.0 release commit, the one the `v2.0.0` tag names;
@@ -520,7 +520,7 @@ Two things to know:
   [its README](tests/e2e/README.md):
 
 ```bash
-cargo install --git https://github.com/GoPlasmatic/Orion --rev 1e58099f0b032c60b64f5b6d6e2af4c330dde0d1 orion-server --locked
+cargo install --git https://github.com/GoPlasmatic/Orion --rev 9cfc5326a155b59b414bc12788bed4eef1f0a491 orion-server --locked
 ORION_EXAMPLES_DIR=/path/to/Orion/examples ./tests/e2e/run.sh
 ```
 

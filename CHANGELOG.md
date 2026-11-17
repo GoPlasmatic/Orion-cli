@@ -58,7 +58,7 @@ The first release from this repository; 1.x shipped from GoPlasmatic/Orion.
 
 ### Changed
 
-- Build against Orion 2.0.0 (release commit `1e58099f`) on every
+- Build against Orion 2.0.0 (release commit `9cfc5326`) on every
   `orion-*` dependency and in CI's `ORION_REV`.
 - Requires Rust 1.100 (MSRV), the toolchain CI and the release builds pin.
 - Dependencies refreshed to their latest releases.

@@ -33,7 +33,7 @@ env:
   # orion-server, and Orion's examples, from the same commit. Bump the two
   # together; move to a tag when v2.0.0 exists.
   ORION_REPO: GoPlasmatic/Orion
-  ORION_REV: 1e58099f0b032c60b64f5b6d6e2af4c330dde0d1
+  ORION_REV: 9cfc5326a155b59b414bc12788bed4eef1f0a491
 
 jobs:
   fmt:

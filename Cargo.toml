@@ -52,10 +52,10 @@ serde-saphyr = { version = "2", default-features = false, features = ["serialize
 # it. Move all of them together (a rev, or the tag once it exists).
 # The shared wire contract: the error envelope, status vocabulary and import
 # report this CLI reads are the same types the server serializes.
-orion-api = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
+orion-api = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
 # The shared transport. That crate owns reqwest; the CLI has no direct HTTP
 # dependency.
-orion-client = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
+orion-client = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
 # Direct so `streams tail` can poll the streaming response without a util crate.
 futures-core = "0.3"
 # Same spec as orion-server so the lockfile carries one `toml` tree.
@@ -71,13 +71,13 @@ tokio-util = "0.7"
 # sql check, plugin signing) run the definition checks, the engine and the
 # plugin sandbox in-process, so this binary links them — the same crates the
 # server is built from, at the same release.
-orion-authoring = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
-orion-common = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
-orion-definitions = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
-orion-engine = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
-orion-plugin-host = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
-orion-runtime = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
-orion-storage = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
+orion-authoring = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
+orion-common = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
+orion-definitions = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
+orion-engine = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
+orion-plugin-host = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
+orion-runtime = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
+orion-storage = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
 dataflow-rs = { version = "4.0.3", features = ["datetime", "budget"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "migrate", "macros", "chrono", "uuid", "json", "bigdecimal", "sqlite", "postgres", "mysql"] }
 similar = "3"
@@ -92,7 +92,7 @@ testcontainers = { version = "0.27.3", default-features = false, features = ["aw
 testcontainers-modules = { version = "0.15", default-features = false, features = ["aws-lc-rs", "postgres", "mysql"] }
 # The `server` test binary: a node assembled in-process through the server's
 # own boot path (its library target is `orion`), driven over its router.
-orion-server = { git = "https://github.com/GoPlasmatic/Orion", rev = "1e58099f0b032c60b64f5b6d6e2af4c330dde0d1" }
+orion-server = { git = "https://github.com/GoPlasmatic/Orion", rev = "9cfc5326a155b59b414bc12788bed4eef1f0a491" }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio", "tracing", "matched-path", "multipart"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
 

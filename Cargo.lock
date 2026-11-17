@@ -2793,7 +2793,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 [[package]]
 name = "orion-api"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "chrono",
  "serde",
@@ -2804,7 +2804,7 @@ dependencies = [
 [[package]]
 name = "orion-authoring"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -2869,7 +2869,7 @@ dependencies = [
 [[package]]
 name = "orion-client"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "bytes",
  "futures-core",
@@ -2885,7 +2885,7 @@ dependencies = [
 [[package]]
 name = "orion-common"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "aes-gcm",
  "aws-lc-rs",
@@ -2924,7 +2924,7 @@ dependencies = [
 [[package]]
 name = "orion-definitions"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "serde_json",
 ]
@@ -2932,7 +2932,7 @@ dependencies = [
 [[package]]
 name = "orion-engine"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "arc-swap",
  "argon2",
@@ -2978,7 +2978,7 @@ dependencies = [
 [[package]]
 name = "orion-extension-api"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "async-trait",
  "orion-api",
@@ -2990,7 +2990,7 @@ dependencies = [
 [[package]]
 name = "orion-http"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "axum",
  "axum-server",
@@ -3030,7 +3030,7 @@ dependencies = [
 [[package]]
 name = "orion-plugin-host"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "dataflow-rs",
  "orion-common",
@@ -3046,7 +3046,7 @@ dependencies = [
 [[package]]
 name = "orion-runtime"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -3091,7 +3091,7 @@ dependencies = [
 [[package]]
 name = "orion-server"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "axum-server",
  "chrono",
@@ -3120,7 +3120,7 @@ dependencies = [
 [[package]]
 name = "orion-storage"
 version = "2.0.0"
-source = "git+https://github.com/GoPlasmatic/Orion?rev=1e58099f0b032c60b64f5b6d6e2af4c330dde0d1#1e58099f0b032c60b64f5b6d6e2af4c330dde0d1"
+source = "git+https://github.com/GoPlasmatic/Orion?rev=9cfc5326a155b59b414bc12788bed4eef1f0a491#9cfc5326a155b59b414bc12788bed4eef1f0a491"
 dependencies = [
  "async-trait",
  "chrono",
