@@ -1,0 +1,24 @@
+name: Check PAT
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Report GH_PAT scopes and package access
+        env:
+          PAT: ${{ secrets.GH_PAT }}
+        run: |
+          if [ -z "$PAT" ]; then echo "GH_PAT is empty"; exit 1; fi
+          echo "user:"
+          curl -s -H "Authorization: token $PAT" https://api.github.com/user | jq -r '.login // .message'
+          echo "scopes:"
+          curl -sI -H "Authorization: token $PAT" https://api.github.com/user \
+            | tr -d '\r' | grep -i '^x-oauth-scopes:' || echo "no x-oauth-scopes header"
+          echo "package:"
+          curl -s -o /tmp/pkg.json -w '%{http_code}\n' \
+            -H "Authorization: token $PAT" \
+            https://api.github.com/orgs/GoPlasmatic/packages/container/orion-cli
+          cat /tmp/pkg.json | jq -r '.name, .visibility, (.repository.full_name // "no linked repository"), .message' 2>/dev/null || cat /tmp/pkg.json
