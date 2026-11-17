@@ -22,6 +22,11 @@ categories = ["command-line-utilities", "development-tools"]
 name = "orion-cli"
 path = "src/main.rs"
 
+# The package is not published to crates.io, so dist must be told explicitly
+# that this is a distributable binary rather than a library it should skip.
+[package.metadata.dist]
+dist = true
+
 # The CLI against an in-process orion-server: the tests that need both sides
 # of the wire. One binary, each file a module declared in its main.rs.
 [[test]]
