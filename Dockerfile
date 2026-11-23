@@ -7,7 +7,7 @@
 # Digest-pinned to the same base images as the Orion CLI image always used so
 # a rebuild months from now resolves the same layers; dependabot bumps the
 # tag+digest.
-FROM rust:1.100-slim@sha256:e9d95b74296f7126a83ae3d041aeaba1ff4c478f13abc5cc034fcf7c131c3d4a AS chef
+FROM rust:1.100-slim@sha256:6f14b2b4b278ec0d50aa1d69541c304ce0f95e0f6268487aa9924af1c2e9aebe AS chef
 # git: cargo fetches the orion-* git dependencies with the git CLI. cmake,
 # g++ and pkg-config for the -sys crates (aws-lc-sys, the rustls crypto
 # provider, among them) — the server image's builder line, plus git. Keep in
